@@ -1,0 +1,48 @@
+BSD 3-Clause License
+
+Copyright (c) 2025, João Felipe Santos
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+Third-Party Components
+======================
+
+The SCSP emulator in src/engines/scsp/wasm/ (scsp.c, scsp.h, scspdsp.c,
+scsplfo.c) is derived from the Audio Overload SDK (aosdk) and is licensed
+under the MAME license (pre-2016), which adds the following restrictions:
+
+  * Redistributions may not be sold, nor may they be used in a commercial
+    product or activity.
+  * Modified redistributions must include complete source code.
+
+See src/engines/scsp/wasm/LICENSE for the full MAME license text.
+
+The MAME license applies to the SCSP emulator source files, the compiled WASM
+binary (scsp.wasm), and the JS glue (scsp.js). The bundled HTML output of
+generate.py embeds the WASM binary and is therefore also subject to the MAME
+license terms. All other files in this repository are under the BSD 3-Clause
+license above.
