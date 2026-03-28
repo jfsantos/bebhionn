@@ -1,6 +1,6 @@
 # Bebhionn
 
-![Bebhionn Tracker](screenshot.png)
+![Bebhionn Tracker](demo.gif)
 
 | Instrument Editor | Instrument Detail | DSP Effect Editor |
 |:-:|:-:|:-:|
