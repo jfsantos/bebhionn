@@ -6,9 +6,10 @@
 |:-:|:-:|:-:|
 | ![Instrument Editor](screenshot_inst.png) | ![Instrument Detail](screenshot_detail.png) | ![DSP Effect Editor](screenshot_dsp.png) |
 
-Browser-based vertical tracker for composing music with the Sega Saturn's
-SCSP (YMF292-F) sound chip. Uses a hardware-accurate WASM emulator — what
-you hear is what the Saturn plays (-ish). Exports SEQ + TON files directly.
+Bebhionn (pronounced /ˈbeɪvɪn/, or BAY-vin) is a browser-based vertical tracker
+for composing music with the Sega Saturn's SCSP (YMF292-F) sound chip. Uses a
+hardware-accurate WASM emulator — what you hear is what the Saturn plays (-ish).
+Exports SEQ + TON files directly.
 
 ## Quick Start
 
