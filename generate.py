@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-saturn_tracker.py — Bebhionn — Saturn SCSP FM Tracker.
+generate.py — Bebhionn — Saturn SCSP FM Tracker.
 
 Browser-based classic vertical tracker for composing music using the
 hardware-accurate SCSP (YMF292-F) emulator. Exports SEQ + TON files
 directly for use on Sega Saturn.
 
 Usage:
-  python3 saturn_tracker.py                     # Open tracker in browser
-  python3 saturn_tracker.py -o tracker.html     # Save to specific file
-  python3 saturn_tracker.py --no-open           # Generate without opening
-  python3 saturn_tracker.py --dev -o tracker.html  # Dev mode: external JS files
+  python3 generate.py                     # Open tracker in browser
+  python3 generate.py -o tracker.html     # Save to specific file
+  python3 generate.py --no-open           # Generate without opening
+  python3 generate.py --dev -o tracker.html  # Dev mode: external JS files
 
-Architecture: generates a self-contained HTML file with embedded WASM,
-same pattern as fm_editor.py. No server required.
+Architecture: generates a self-contained HTML file with embedded WASM.
+No server required.
 
-Dev mode (--dev): emits <script src="tools/..."> tags instead of inlining
+Dev mode (--dev): emits <script src="src/..."> tags instead of inlining
 JS, so you can edit the JS files and just reload the browser. WASM is
 fetched at runtime. Must be served from the repo root (or use --dev with
 -o to place the HTML there).
@@ -30,18 +30,18 @@ import webbrowser
 
 
 # JS modules loaded by the tracker, in dependency order.
-# Each entry: (placeholder, filename, fallback)
+# Each entry: (relative path from repo root, fallback JS)
 _JS_MODULES = [
-    ('ton_io.js',          "var TonIO = null;"),
-    ('note_util.js',       "const NOTE_NAMES = []; function noteName() { return '???'; }"),
-    ('midi_io.js',         "function parseMIDI() { throw new Error('midi_io.js not found'); } function buildMIDI() { throw new Error('midi_io.js not found'); }"),
-    ('seq_io.js',          "function parseSEQ() { throw new Error('seq_io.js not found'); } function buildSEQ() { throw new Error('seq_io.js not found'); }"),
-    ('tracker_state.js',   "var TrackerState = { NUM_CHANNELS: 8, create: function() { return {}; } };"),
-    ('tracker_playback.js',"var TrackerPlayback = { create: function() { return {}; } };"),
-    ('scsp_engine.js',     "var SCSPEngine = {};"),
-    ('tracker_ui.js',      "var TrackerUI = { init: function() {} };"),
-    ('scsp_panels.js',  "var SCSPPanels = { init: function() {} };"),
-    ('scspdspasm.js',      "function scspdspAssemble(){return {errors:['assembler not found'],mpro:new Uint16Array(512),coef:new Int16Array(64),madrs:new Uint16Array(32),rbl:0,steps:0};}"),
+    ('src/io/ton_io.js',                    "var TonIO = null;"),
+    ('src/core/note_util.js',               "const NOTE_NAMES = []; function noteName() { return '???'; }"),
+    ('src/io/midi_io.js',                   "function parseMIDI() { throw new Error('midi_io.js not found'); } function buildMIDI() { throw new Error('midi_io.js not found'); }"),
+    ('src/io/seq_io.js',                    "function parseSEQ() { throw new Error('seq_io.js not found'); } function buildSEQ() { throw new Error('seq_io.js not found'); }"),
+    ('src/core/tracker_state.js',           "var TrackerState = { NUM_CHANNELS: 8, create: function() { return {}; } };"),
+    ('src/core/tracker_playback.js',        "var TrackerPlayback = { create: function() { return {}; } };"),
+    ('src/engines/scsp/scsp_engine.js',     "var SCSPEngine = {};"),
+    ('src/core/tracker_ui.js',              "var TrackerUI = { init: function() {} };"),
+    ('src/engines/scsp/scsp_panels.js',     "var SCSPPanels = { init: function() {} };"),
+    ('src/engines/scsp/scspdspasm.js',      "function scspdspAssemble(){return {errors:['assembler not found'],mpro:new Uint16Array(512),coef:new Int16Array(64),madrs:new Uint16Array(32),rbl:0,steps:0};}"),
 ]
 
 
@@ -53,10 +53,10 @@ def generate_html(bundled=True):
                  inlined.  If False, emit <script src="..."> tags referencing
                  external files (for development — edit JS and just reload).
     """
-    tools_dir = os.path.dirname(__file__)
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
 
-    def load_file(filename, mode='r'):
-        p = os.path.join(tools_dir, filename)
+    def load_file(rel_path, mode='r'):
+        p = os.path.join(repo_dir, rel_path)
         if os.path.exists(p):
             with open(p, mode) as f:
                 return f.read()
@@ -72,24 +72,24 @@ def generate_html(bundled=True):
             script_lines.append(f'<script>\n{content}\n</script>')
 
         # Inline WASM binary + Emscripten glue
-        wasm_bytes = load_file(os.path.join('scsp_wasm', 'scsp.wasm'), mode='rb')
-        glue_js = load_file(os.path.join('scsp_wasm', 'scsp.js'))
+        wasm_bytes = load_file(os.path.join('src', 'engines', 'scsp', 'wasm', 'scsp.wasm'), mode='rb')
+        glue_js = load_file(os.path.join('src', 'engines', 'scsp', 'wasm', 'scsp.js'))
         if wasm_bytes and glue_js:
             wasm_b64 = base64.b64encode(wasm_bytes).decode('ascii')
         else:
-            print("[tracker] WARNING: SCSP WASM not found. Run 'make' in tools/scsp_wasm/")
+            print("[tracker] WARNING: SCSP WASM not found. Run 'make' in src/engines/scsp/wasm/")
             wasm_b64 = ""
             glue_js = "var SCSPModule = () => Promise.resolve(null);"
 
         # Embed demo MIDI + example TON files so the JS can reference them
         demo_midi_b64 = ""
-        demo_path = os.path.join(tools_dir, '..', 'examples', 'kit_demo.mid')
+        demo_path = os.path.join(repo_dir, 'examples', 'kit_demo.mid')
         if os.path.exists(demo_path):
             with open(demo_path, 'rb') as f:
                 demo_midi_b64 = base64.b64encode(f.read()).decode('ascii')
 
         example_tons = {}
-        ton_dir = os.path.join(tools_dir, '..', 'test_ton')
+        ton_dir = os.path.join(repo_dir, 'test_ton')
         if os.path.isdir(ton_dir):
             for fn in sorted(os.listdir(ton_dir)):
                 if fn.upper().endswith('.TON'):
@@ -117,16 +117,16 @@ def generate_html(bundled=True):
 
     else:
         # External script references — for development
-        for filename, _fallback in _JS_MODULES:
-            script_lines.append(f'<script src="tools/{filename}"></script>')
+        for filepath, _fallback in _JS_MODULES:
+            script_lines.append(f'<script src="{filepath}"></script>')
 
         # WASM + glue loaded at runtime via fetch; bootstrap is async
         script_lines.append(
-            '<script src="tools/scsp_wasm/scsp.js"></script>\n'
+            '<script src="src/engines/scsp/wasm/scsp.js"></script>\n'
             '<script>\n'
             '// Dev mode: fetch WASM binary and convert to base64 for the engine\n'
             '(async function() {\n'
-            '  var resp = await fetch("tools/scsp_wasm/scsp.wasm");\n'
+            '  var resp = await fetch("src/engines/scsp/wasm/scsp.wasm");\n'
             '  if (resp.ok) {\n'
             '    var buf = await resp.arrayBuffer();\n'
             '    var bytes = new Uint8Array(buf);\n'
@@ -135,7 +135,7 @@ def generate_html(bundled=True):
             '    window.SCSP_WASM_B64 = btoa(bin);\n'
             '  } else {\n'
             '    window.SCSP_WASM_B64 = "";\n'
-            '    console.warn("SCSP WASM not found — run make in tools/scsp_wasm/");\n'
+            '    console.warn("SCSP WASM not found — run make in src/engines/scsp/wasm/");\n'
             '  }\n'
             '  // Bootstrap\n'
             '  var state = TrackerState.create(SCSPEngine.getPresets());\n'
