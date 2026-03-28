@@ -1,6 +1,10 @@
 # Bebhionn
 
-![Screenshot of the Bebhionn tracker interface](screenshot.png)
+![Bebhionn Tracker](screenshot.png)
+
+| Instrument Editor | Instrument Detail | DSP Effect Editor |
+|:-:|:-:|:-:|
+| ![Instrument Editor](screenshot_inst.png) | ![Instrument Detail](screenshot_detail.png) | ![DSP Effect Editor](screenshot_dsp.png) |
 
 Browser-based vertical tracker for composing music with the Sega Saturn's
 SCSP (YMF292-F) sound chip. Uses a hardware-accurate WASM emulator — what
