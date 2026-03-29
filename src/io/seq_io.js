@@ -209,10 +209,11 @@ function parseSEQ(buf) {
  * });
  * // seq is a Uint8Array containing a valid .seq file
  */
-function buildSEQ({ patterns, song, bpm, stepsPerBeat, numChannels }) {
+function buildSEQ({ patterns, song, bpm, stepsPerBeat, numChannels, mutedChannels }) {
     const resolution = 480;
     const ticksPerStep = resolution / stepsPerBeat;
     const mspb = Math.round(60000000 / bpm);
+    const muted = mutedChannels || [];
 
     const events = [];
     let stepOffset = 0;
@@ -221,6 +222,7 @@ function buildSEQ({ patterns, song, bpm, stepsPerBeat, numChannels }) {
     for (const patIdx of song) {
         const pat = patterns[patIdx];
         for (let ch = 0; ch < numChannels; ch++) {
+            if (muted.indexOf(ch) >= 0) continue;
             if (!(ch in channelInst)) channelInst[ch] = pat.channels[ch].defaultInst;
         }
     }
@@ -239,6 +241,7 @@ function buildSEQ({ patterns, song, bpm, stepsPerBeat, numChannels }) {
         const pat = patterns[patIdx];
         for (let row = 0; row < pat.length; row++) {
             for (let ch = 0; ch < numChannels; ch++) {
+                if (muted.indexOf(ch) >= 0) continue;
                 const cell = pat.channels[ch].rows[row];
                 if (cell.note !== null && cell.note >= 0) {
                     const absTick = Math.round((stepOffset + row) * ticksPerStep);

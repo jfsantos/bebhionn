@@ -371,6 +371,22 @@ body { font-family: 'SF Mono', Consolas, Monaco, monospace; background: #0a0a1a;
                     font-family: inherit; padding: 0 4px; }
 #kb-overlay-close:hover { color: #f66; }
 #kb-overlay-body { padding: 8px 10px; }
+
+/* About overlay */
+#about { position: fixed; z-index: 1000; display: none; background: #12122aee;
+         border: 1px solid #00d4ff44; border-radius: 6px; padding: 0; min-width: 300px;
+         box-shadow: 0 4px 20px #000a; backdrop-filter: blur(4px); font-size: 11px; }
+#about.visible { display: block; }
+#about-header { display: flex; justify-content: space-between; align-items: center; padding: 5px 10px;
+                cursor: move; background: #1a1a3a; border-radius: 6px 6px 0 0; border-bottom: 1px solid #333;
+                user-select: none; }
+#about-header span { color: #00d4ff; font-weight: bold; font-size: 11px; }
+#about-close { background: none; border: none; color: #666; cursor: pointer; font-size: 14px;
+               font-family: inherit; padding: 0 4px; }
+#about-close:hover { color: #f66; }
+#about-body { padding: 12px 14px; color: #ccc; line-height: 1.6; }
+#about-body a { color: #00d4ff; text-decoration: none; }
+#about-body a:hover { text-decoration: underline; }
 .kb-section { margin-bottom: 8px; }
 .kb-section-title { color: #00d4ff; font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
                     margin-bottom: 4px; }
@@ -395,6 +411,9 @@ body { font-family: 'SF Mono', Consolas, Monaco, monospace; background: #0a0a1a;
   <div class="menu-item" id="menu-file">
     <button onclick="menuToggle('menu-file')">File</button>
     <div class="menu-dropdown">
+      <button onclick="openProject(); menuClose()">Open Project...</button>
+      <button onclick="saveProject(); menuClose()">Save Project</button>
+      <div class="menu-sep"></div>
       <button onclick="importSEQ(); menuClose()">Import SEQ...</button>
       <button onclick="importTonForTracker(); menuClose()">Import TON...</button>
       <div class="menu-sep"></div>
@@ -437,6 +456,7 @@ body { font-family: 'SF Mono', Consolas, Monaco, monospace; background: #0a0a1a;
     <button onclick="menuToggle('menu-help')">Help</button>
     <div class="menu-dropdown">
       <button onclick="toggleKbOverlay(); menuClose()">Keyboard Shortcuts <span class="menu-kbd">F1</span></button>
+      <button onclick="toggleAbout(); menuClose()">About...</button>
     </div>
   </div>
 </div>
@@ -675,6 +695,21 @@ __SCRIPTS__
   </div>
 </div>
 
+<!-- About overlay -->
+<div id="about">
+  <div id="about-header">
+    <span>About Bebhionn</span>
+    <button id="about-close" onclick="toggleAbout()">&times;</button>
+  </div>
+  <div id="about-body">
+    <strong>Bebhionn</strong> is a browser-based vertical tracker for composing
+    music with the Sega Saturn's SCSP (YMF292-F) sound chip.<br><br>
+    It uses a hardware-accurate WASM emulator &mdash; what you hear is what the
+    Saturn plays. Exports SEQ + TON files directly.<br><br>
+    <a href="https://github.com/jfsantos/bebhionn" target="_blank" rel="noopener">github.com/jfsantos/bebhionn</a>
+  </div>
+</div>
+
 <script>
 // Menu bar: toggle dropdowns, close on outside click
 function menuToggle(id) {
@@ -711,6 +746,17 @@ function toggleKbOverlay() {
         el.dataset.positioned = '1';
     }
 }
+// Keyboard overlay: toggle, drag, F1 shortcut
+function toggleAbout() {
+    var el = document.getElementById('about');
+    el.classList.toggle('visible');
+    if (el.classList.contains('visible') && !el.dataset.positioned) {
+        el.style.right = '280px';
+        el.style.top = '60px';
+        el.dataset.positioned = '1';
+    }
+}
+
 
 (function() {
     var overlay = document.getElementById('kb-overlay');
@@ -735,6 +781,27 @@ function toggleKbOverlay() {
     document.addEventListener('keydown', function(e) {
         if (e.key === 'F1') { e.preventDefault(); toggleKbOverlay(); }
     });
+})();
+
+// About overlay: drag
+(function() {
+    var overlay = document.getElementById('about');
+    var header = document.getElementById('about-header');
+    var dragging = false, ox = 0, oy = 0;
+
+    header.addEventListener('mousedown', function(e) {
+        dragging = true;
+        ox = e.clientX - overlay.offsetLeft;
+        oy = e.clientY - overlay.offsetTop;
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', function(e) {
+        if (!dragging) return;
+        overlay.style.left = (e.clientX - ox) + 'px';
+        overlay.style.top = (e.clientY - oy) + 'px';
+        overlay.style.right = 'auto';
+    });
+    document.addEventListener('mouseup', function() { dragging = false; });
 })();
 </script>
 </body>

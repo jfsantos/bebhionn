@@ -266,6 +266,24 @@ var TrackerState = (function () {
         for (var i = 0; i < NUM_CHANNELS; i++) channelState[i] = 'on';
     }
 
+    /**
+     * Get a copy of the full channel state array.
+     * @returns {string[]} Array of 'on', 'muted', or 'solo' per channel
+     */
+    function getChannelStates() {
+        return channelState.slice();
+    }
+
+    /**
+     * Restore channel state from a saved array.
+     * @param {string[]} states - Array of 'on', 'muted', or 'solo' per channel
+     */
+    function setChannelStates(states) {
+        for (var i = 0; i < NUM_CHANNELS; i++) {
+            channelState[i] = (states && states[i]) || 'on';
+        }
+    }
+
     // ── Public API ──
 
     var api = {
@@ -287,6 +305,8 @@ var TrackerState = (function () {
         toggleMute: toggleMute,
         toggleSolo: toggleSolo,
         getChannelState: getChannelState,
+        getChannelStates: getChannelStates,
+        setChannelStates: setChannelStates,
         resetChannelState: resetChannelState,
     };
 

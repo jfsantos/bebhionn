@@ -11,6 +11,8 @@ for composing music with the Sega Saturn's SCSP (YMF292-F) sound chip. Uses a
 hardware-accurate WASM emulator — what you hear is what the Saturn plays (-ish).
 Exports SEQ + TON files directly.
 
+[See it LIVE](https://jfsantos.dev/tracker).
+
 ## Quick Start
 
 ```bash

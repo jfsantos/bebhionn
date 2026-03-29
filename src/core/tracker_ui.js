@@ -63,6 +63,8 @@ var TrackerUI = (function() {
         w.dupInstrument = dupInstrument;
         w.delInstrument = delInstrument;
         w.onTonSelect = onTonSelect;
+        w.saveProject = saveProject;
+        w.openProject = openProject;
         w.toggleMute = toggleMute;
         w.toggleSolo = toggleSolo;
         w.setPatternLength = setPatternLength;
@@ -846,9 +848,93 @@ var TrackerUI = (function() {
         showStatus('Exported TON (' + state.instruments.length + ' instruments)');
     }
 
-    /** @description Export song as a Saturn SEQ file and trigger browser download. */
+    // ═══════════════════════════════════════════════════════════════
+    // PROJECT SAVE / OPEN (.beb)
+    // ═══════════════════════════════════════════════════════════════
+
+    /** @description Save the full tracker state as a .beb JSON project file. */
+    function saveProject() {
+        var project = {
+            version: 1,
+            bpm: state.bpm,
+            stepsPerBeat: state.stepsPerBeat,
+            patternLength: state.patternLength,
+            instruments: state.instruments,
+            patterns: state.patterns,
+            song: state.song,
+            channelStates: TrackerState.getChannelStates(),
+        };
+        var json = JSON.stringify(project);
+        var blob = new Blob([json], { type: 'application/json' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'project.beb';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showStatus('Project saved (' + json.length + ' bytes)');
+    }
+
+    /** @description Open a .beb project file and restore the full tracker state. */
+    function openProject() {
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.beb';
+        input.style.display = 'none';
+        document.body.appendChild(input);
+        input.onchange = function(e) {
+            var file = e.target.files[0];
+            document.body.removeChild(input);
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    var project = JSON.parse(ev.target.result);
+                    if (!project.version || !project.patterns || !project.instruments) {
+                        showStatus('Invalid .beb file');
+                        return;
+                    }
+                    if (playback.playing) playback.stop();
+                    state.bpm = project.bpm || 120;
+                    state.stepsPerBeat = project.stepsPerBeat || 4;
+                    state.patternLength = project.patternLength || 32;
+                    state.instruments = project.instruments;
+                    state.patterns = project.patterns;
+                    state.song = project.song || [0];
+                    state.cursor = { row: 0, ch: 0, col: 0 };
+                    currentSongSlot = 0;
+                    selectedInst = 0;
+                    selectedOp = 0;
+                    if (project.channelStates) {
+                        TrackerState.setChannelStates(project.channelStates);
+                    } else {
+                        TrackerState.resetChannelState();
+                    }
+                    document.getElementById('bpm').value = state.bpm;
+                    document.getElementById('pat-len').value = state.patternLength;
+                    renderAll();
+                    notifySelectionChange();
+                    showStatus('Opened: ' + file.name);
+                } catch (err) {
+                    showStatus('Error loading project: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+    }
+
+    /** @description Get list of channel indices that are currently inaudible (muted or not soloed). */
+    function getMutedChannels() {
+        var muted = [];
+        for (var ch = 0; ch < NUM_CHANNELS; ch++) {
+            if (!TrackerState.isChannelAudible(ch)) muted.push(ch);
+        }
+        return muted;
+    }
+
+    /** @description Export song as a Saturn SEQ file and trigger browser download. Muted channels are excluded. */
     function exportSEQ() {
-        const seqData = buildSEQ({ patterns: state.patterns, song: state.song, bpm: state.bpm, stepsPerBeat: state.stepsPerBeat, numChannels: NUM_CHANNELS });
+        const seqData = buildSEQ({ patterns: state.patterns, song: state.song, bpm: state.bpm, stepsPerBeat: state.stepsPerBeat, numChannels: NUM_CHANNELS, mutedChannels: getMutedChannels() });
         if (!seqData) return;
         const blob = new Blob([seqData], { type: 'application/octet-stream' });
         const a = document.createElement('a');
@@ -859,9 +945,9 @@ var TrackerUI = (function() {
         showStatus('Exported SEQ (' + seqData.length + ' bytes)');
     }
 
-    /** @description Export song as a Standard MIDI file and trigger browser download. */
+    /** @description Export song as a Standard MIDI file and trigger browser download. Muted channels are excluded. */
     function exportMIDI() {
-        const midiData = buildMIDI({ patterns: state.patterns, song: state.song, bpm: state.bpm, stepsPerBeat: state.stepsPerBeat, numChannels: NUM_CHANNELS });
+        const midiData = buildMIDI({ patterns: state.patterns, song: state.song, bpm: state.bpm, stepsPerBeat: state.stepsPerBeat, numChannels: NUM_CHANNELS, mutedChannels: getMutedChannels() });
         if (!midiData) return;
         const blob = new Blob([midiData], { type: 'audio/midi' });
         const a = document.createElement('a');
