@@ -33,6 +33,7 @@ import webbrowser
 # Each entry: (relative path from repo root, fallback JS)
 _JS_MODULES = [
     ('src/io/ton_io.js',                    "var TonIO = null;"),
+    ('src/io/dx7_import.js',                "var DX7Import = null;"),
     ('src/core/note_util.js',               "const NOTE_NAMES = []; function noteName() { return '???'; }"),
     ('src/io/midi_io.js',                   "function parseMIDI() { throw new Error('midi_io.js not found'); } function buildMIDI() { throw new Error('midi_io.js not found'); }"),
     ('src/io/seq_io.js',                    "function parseSEQ() { throw new Error('seq_io.js not found'); } function buildSEQ() { throw new Error('seq_io.js not found'); }"),
@@ -416,6 +417,7 @@ body { font-family: 'SF Mono', Consolas, Monaco, monospace; background: #0a0a1a;
       <div class="menu-sep"></div>
       <button onclick="importSEQ(); menuClose()">Import SEQ...</button>
       <button onclick="importTonForTracker(); menuClose()">Import TON...</button>
+      <button onclick="importDx7SysexForTracker(); menuClose()">Import DX7 SysEx...</button>
       <div class="menu-sep"></div>
       <button onclick="exportSEQ(); menuClose()">Export SEQ</button>
       <button onclick="exportTON(); menuClose()">Export TON</button>

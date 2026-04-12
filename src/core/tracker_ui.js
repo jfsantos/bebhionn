@@ -53,6 +53,7 @@ var TrackerUI = (function() {
         w.importMIDI = importMIDI;
         w.importSEQ = importSEQ;
         w.importTonForTracker = importTonForTracker;
+        w.importDx7SysexForTracker = importDx7SysexForTracker;
         w.importTonInst = importTonInst;
         w.addSongSlot = addSongSlot;
         w.removeSongSlot = removeSongSlot;
@@ -704,6 +705,35 @@ var TrackerUI = (function() {
                 } catch (err) {
                     showStatus('SEQ error: ' + err.message);
                 }
+            };
+            reader.readAsArrayBuffer(file);
+        };
+        input.click();
+    }
+
+    /** @description Open file dialog to import a DX7 SysEx bank (.syx) via engine.importDx7Sysex (replaces all instruments). */
+    async function importDx7SysexForTracker() {
+        if (typeof DX7Import === 'undefined' || !DX7Import) { showStatus('DX7Import not available'); return; }
+        await engine.init(); engine.startAudio(playback);
+        const input = document.createElement('input');
+        input.type = 'file'; input.accept = '.syx,.SYX';
+        input.style.display = 'none';
+        document.body.appendChild(input);
+        input.onchange = (e) => {
+            const file = e.target.files[0];
+            document.body.removeChild(input);
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    if (playback.playing) playback.stop();
+                    var result = engine.importDx7Sysex(ev.target.result, file.name);
+                    if (result.instruments) {
+                        state.instruments = result.instruments;
+                    }
+                    showStatus(result.message);
+                    renderAll();
+                } catch (err) { showStatus('DX7 error: ' + err.message); }
             };
             reader.readAsArrayBuffer(file);
         };

@@ -13,6 +13,7 @@
  * @property {function(number): void} releaseChannel
  * @property {function(): void} releaseAll
  * @property {function(ArrayBuffer, string): {instruments: Object[], message: string}} importBank
+ * @property {function(ArrayBuffer, string): {instruments: Object[], message: string}} importDx7Sysex
  * @property {function(Object[]): ?Uint8Array} exportBank
  * @property {function(HTMLElement, Object, number, function): void} renderInstEditor
  * @property {function(): Object} createDefaultInstrument
@@ -223,19 +224,132 @@ var SCSPEngine = (function() {
         }
     }
 
+    // ── Shared slot programming helpers ─────────────────────────────────
+    //
+    // programSlot (high-level) and programSlotRaw (TON passthrough) used to
+    // duplicate pitch math, envelope packing, FM ring-buffer offset remap,
+    // and the 12-line scsp_write_slot sequence at the bottom. These helpers
+    // consolidate everything that's actually shareable. What still differs
+    // intentionally is the *source* of each register word (derived from op
+    // vs. passed through from rawRegs) and the base-note formula (see
+    // project_bebhionn_basenote_bug.md for a known latent pitch divergence
+    // that we preserve here rather than silently change).
+
+    /** Natural base MIDI note of a waveform: the note at which its natural
+     *  period plays back at OCT=0 FNS=0 (no hardware pitch shift). */
+    function wavBaseNoteFor(wavLen) {
+        return 69 + 12 * Math.log2(SAMPLE_RATE / wavLen / 440);
+    }
+
+    /** Pack OCT/FNS register bits from a desired MIDI note and the base note
+     *  at which the underlying sample plays unshifted. */
+    function computeOctFnsBits(midiNote, opBaseNote) {
+        var semi = midiNote - opBaseNote;
+        var octave = Math.max(-8, Math.min(7, Math.floor(semi / 12)));
+        var frac = semi - octave * 12;
+        var fns = Math.max(0, Math.min(1023, Math.round(1024 * (Math.pow(2, frac / 12) - 1))));
+        return ((octave & 0xF) << 11) | (fns & 0x3FF);
+    }
+
+    /** Convert a packed TL byte to its linear gain (matches scsp.c / scsp_voice.c). */
+    function tlToLinear(tl) {
+        var db = 0;
+        if (tl & 1)   db -= 0.4;
+        if (tl & 2)   db -= 0.8;
+        if (tl & 4)   db -= 1.5;
+        if (tl & 8)   db -= 3;
+        if (tl & 16)  db -= 6;
+        if (tl & 32)  db -= 12;
+        if (tl & 64)  db -= 24;
+        if (tl & 128) db -= 48;
+        return Math.pow(10, db / 20);
+    }
+
+    /** Derive a feedback-path MDL nibble from a target beta and the carrier TL.
+     *  Mirrors scsp_voice.c:compute_mdl, including the max_safe clamp that
+     *  prevents runaway feedback when the modulator is near full scale. */
+    function computeFeedbackMdl(tl, feedback) {
+        var tlLin = tlToLinear(tl);
+        var ringPeak = 32767 * 4 * tlLin / 2;
+        if (ringPeak < 1) return 0;
+        var targetBeta = feedback * Math.PI;
+        var needed = targetBeta * 1024 / (ringPeak * 2 * Math.PI);
+        var mdl = Math.max(0, Math.min(15, Math.round(16 + Math.log2(Math.max(needed, 1e-10)))));
+        var maxSafe = 1024 / (ringPeak * 2);
+        var maxMdl = Math.floor(15 + Math.log2(Math.max(maxSafe, 1e-10)));
+        if (mdl > maxMdl) mdl = maxMdl;
+        return mdl;
+    }
+
+    /** Compute d7 (MDL|MDXSL|MDYSL) from a high-level op, resolving mod_source
+     *  to an absolute slot via slotBase. Used by programSlot. */
+    function computeD7FromOp(op, slot, slotBase, tl) {
+        var mdl = 0, mdxsl = 0, mdysl = 0;
+        if (op.mod_source >= 0 && op.mdl > 0) {
+            mdl = Math.round(op.mdl) & 0xF;
+            var modSlot = slotBase + op.mod_source;
+            var dist = (modSlot - slot) & 63;
+            mdxsl = dist; mdysl = dist;
+        }
+        if (op.feedback > 0) {
+            var fbDist = (-32) & 63;
+            var fbMdl = computeFeedbackMdl(tl, op.feedback);
+            if (mdl > 0) { mdysl = fbDist; mdl = Math.max(mdl, fbMdl); }
+            else { mdl = fbMdl; mdxsl = fbDist; mdysl = fbDist; }
+        }
+        return ((mdl & 0xF) << 12) | ((mdxsl & 0x3F) << 6) | (mdysl & 0x3F);
+    }
+
+    /** Remap d7's MDXSL/MDYSL fields from a TON-imported raw d7 to reflect
+     *  the current slot allocation; preserves MDL as-is. Used by programSlotRaw. */
+    function remapD7Raw(rawD7, modSource, slot, slotBase) {
+        var mdl = (rawD7 >> 12) & 0xF;
+        if (mdl === 0) return rawD7 & 0xF000;
+        if (modSource >= 0) {
+            var modSlot = slotBase + modSource;
+            var dist = (modSlot - slot) & 63;
+            return (mdl << 12) | ((dist & 0x3F) << 6) | (dist & 0x3F);
+        }
+        // Feedback path (no explicit modSource): keep -32 offset for self-mod.
+        var fbDist = (-32) & 63;
+        return (mdl << 12) | ((fbDist & 0x3F) << 6) | (fbDist & 0x3F);
+    }
+
+    /** Write a pre-computed register bundle to a SCSP slot. This is the single
+     *  low-level write sequence shared by programSlot and programSlotRaw. */
+    function writeSlotRegisters(slot, regs) {
+        var d0 = ((regs.lpctl & 3) << 5) | ((regs.sa >> 16) & 0xF);
+        scsp._scsp_write_slot(slot, 0x0, d0);
+        scsp._scsp_write_slot(slot, 0x1, regs.sa & 0xFFFF);
+        scsp._scsp_write_slot(slot, 0x2, regs.lsa);
+        scsp._scsp_write_slot(slot, 0x3, regs.lea);
+        scsp._scsp_write_slot(slot, 0x4, regs.d4);
+        scsp._scsp_write_slot(slot, 0x5, regs.d5);
+        scsp._scsp_write_slot(slot, 0x6, regs.tl & 0xFF);
+        scsp._scsp_write_slot(slot, 0x7, regs.d7);
+        scsp._scsp_write_slot(slot, 0x8, regs.octBits);
+        scsp._scsp_write_slot(slot, 0x9, 0);
+        scsp._scsp_write_slot(slot, 0xA, 0);
+        // Write DISDL/DIPAN (upper byte of 0xB) preserving EFSDL/EFPAN (lower byte)
+        scsp._scsp_slot_set_direct_output(slot, regs.disdl & 7, regs.dipan & 0x1F);
+        if (slotPostProgramHook) slotPostProgramHook(slot);
+    }
+
     // ── programSlot ────────────────────────────────────────────────────
 
     /**
-     * @description Compute and program SCSP registers for a slot from high-level operator
-     * parameters. Handles pitch calculation (octave + FNS), envelope registers (AR/D1R/D2R/DL/RR),
-     * total level, FM modulation ring buffer offsets (MDL/MDXSL/MDYSL), feedback, and
-     * direct-output routing. Modulators are forced to use the default 1024-sample waveform.
+     * @description Program a SCSP slot from high-level operator parameters.
+     * Derives pitch (from freq_ratio or freq_fixed via the waveform's natural
+     * base note), envelope registers, TL from level, and FM routing from
+     * mod_source + feedback. Modulators and FM carriers are forced onto the
+     * default 1024-sample waveform because the SCSP's FM math assumes a
+     * 1024-sample cycle.
      * @param {number} slot - SCSP slot index (0-31)
      * @param {Object} op - High-level operator parameters (freq_ratio, level, ar, d1r, etc.)
      * @param {number} midiNote - MIDI note number to play (0-127)
-     * @param {Object[]} allOps - All operators in the instrument (for resolving mod_source)
+     * @param {number} slotBase - First slot index of this voice (used to resolve mod_source to an absolute slot)
      */
-    function programSlot(slot, op, midiNote, allOps) {
+    function programSlot(slot, op, midiNote, slotBase) {
         var wid = op.waveform || 0;
         var wav = waveStore.waves[wid] || waveStore.waves[0];
 
@@ -256,142 +370,91 @@ var SCSPEngine = (function() {
 
         var wavLen = wav.length || WAVE_LEN;
         var wavBaseFreq = SAMPLE_RATE / wavLen;
-        var wavBaseNote = 69 + 12 * Math.log2(wavBaseFreq / 440);
+        var wavBaseNote = wavBaseNoteFor(wavLen);
 
+        // Resolve the operator's effective base note (at which midiNote plays unshifted).
+        // For freq_ratio, this is wavBaseNote shifted down by the ratio in semitones so
+        // that midiNote=69 with ratio=1 plays at A4. For freq_fixed, the base note is
+        // wherever that fixed frequency maps onto the MIDI scale.
         var opBaseNote;
         if (op.freq_fixed > 0) {
             opBaseNote = wavBaseNote + 12 * Math.log2(op.freq_fixed / wavBaseFreq);
         } else {
             opBaseNote = wavBaseNote - 12 * Math.log2(op.freq_ratio || 1);
         }
-        var semi = midiNote - opBaseNote;
-        var octave = Math.max(-8, Math.min(7, Math.floor(semi / 12)));
-        var frac = semi - octave * 12;
-        var fns = Math.max(0, Math.min(1023, Math.round(1024 * (Math.pow(2, frac / 12) - 1))));
-        var octBits = ((octave & 0xF) << 11) | (fns & 0x3FF);
+        var octBits = computeOctFnsBits(midiNote, opBaseNote);
 
-        var d0 = (lpctl << 5) | ((sa >> 16) & 0xF);
+        // TL: match TON persistence (ton_io.js exportTon/importTon) and syncRawRegs.
+        // Linear-in-level formula is kept here for consistency with the on-disk
+        // format; log-domain TL mapping is a separate discussion (see DX7
+        // converter loudness work).
+        var tl = Math.max(0, Math.min(255, Math.round((1.0 - (op.level || 0)) * 128)));
+
         var d4 = ((op.d2r & 0x1F) << 11) | ((op.d1r & 0x1F) << 6) | (op.ar & 0x1F);
-        var d5 = ((op.dl & 0x1F) << 5) | (op.rr & 0x1F);
+        // KRS=0xf disables key-rate scaling so the effective envelope rate
+        // is 2*R rather than octave+2*R+fns_msb. Without this, the documented
+        // AR_TIMES/DR_TIMES tables (which assume KRS=0xf) disagree with what
+        // the hardware actually produces, and the DX7 converter's rate→time
+        // mapping is wrong for any note other than ~A3. Matches scsp_voice.c.
+        var d5 = (0xF << 10) | ((op.dl & 0x1F) << 5) | (op.rr & 0x1F);
+        var d7 = computeD7FromOp(op, slot, slotBase, tl);
 
-        var tl;
-        if (op.is_carrier) {
-            tl = Math.max(0, Math.min(255, Math.round((1.0 - op.level) * 255)));
-        } else {
-            tl = Math.round(24 + (1.0 - op.level) * 56);
-        }
-        var d6 = tl & 0xFF;
+        // DISDL: per-op override wins (used by the DX7 importer to avoid
+        // multi-carrier saturation — scsp.c's per-slot mixer applies a 4×
+        // gain so DISDL=7 on a single unity carrier already clips). Legacy
+        // UI presets and TON-imported patches still fall back to the
+        // is_carrier ? 7 : 0 heuristic they were authored against.
+        var disdl = (typeof op.disdl === 'number') ?
+            (op.disdl & 7) : (op.is_carrier ? 7 : 0);
 
-        var mdl = 0, mdxsl = 0, mdysl = 0;
-        if (op.mod_source >= 0 && op.mdl >= 5) {
-            var modOp = allOps[op.mod_source];
-            var modTL = Math.round(24 + (1.0 - modOp.level) * 56);
-            var segaDB = 0;
-            if(modTL&1) segaDB-=0.4; if(modTL&2) segaDB-=0.8; if(modTL&4) segaDB-=1.5;
-            if(modTL&8) segaDB-=3; if(modTL&16) segaDB-=6; if(modTL&32) segaDB-=12;
-            if(modTL&64) segaDB-=24; if(modTL&128) segaDB-=48;
-            var tlLin = Math.pow(10, segaDB / 20);
-            var ringPeak = 32767 * 4 * tlLin / 2;
-            var targetBeta = Math.min(modOp.level * Math.PI, 2.5);
-            var needed = targetBeta * 1024 / (ringPeak * 2 * Math.PI);
-            mdl = Math.max(0, Math.min(15, Math.round(16 + Math.log2(Math.max(needed, 1e-10)))));
-            var maxSafe = 1024 / (ringPeak * 2);
-            var maxMDL = Math.floor(15 + Math.log2(Math.max(maxSafe, 1e-10)));
-            mdl = Math.min(mdl, maxMDL);
-            var dist = (op.mod_source - slot) & 63;
-            mdxsl = dist; mdysl = dist;
-        }
-        if (op.feedback > 0) {
-            var fbDist = (-32) & 63;
-            var myTL = tl;
-            var segaDB2 = 0;
-            if(myTL&1) segaDB2-=0.4; if(myTL&2) segaDB2-=0.8; if(myTL&4) segaDB2-=1.5;
-            if(myTL&8) segaDB2-=3; if(myTL&16) segaDB2-=6; if(myTL&32) segaDB2-=12;
-            if(myTL&64) segaDB2-=24; if(myTL&128) segaDB2-=48;
-            var tlLin2 = Math.pow(10, segaDB2 / 20);
-            var ringPeak2 = 32767 * 4 * tlLin2 / 2;
-            var targetBeta2 = op.feedback * Math.PI;
-            var needed2 = targetBeta2 * 1024 / (ringPeak2 * 2 * Math.PI);
-            var fbMdl = Math.max(0, Math.min(15, Math.round(16 + Math.log2(Math.max(needed2, 1e-10)))));
-            if (mdl > 0) { mdysl = fbDist; mdl = Math.max(mdl, fbMdl); }
-            else { mdl = fbMdl; mdxsl = fbDist; mdysl = fbDist; }
-        }
-        var d7 = ((mdl & 0xF) << 12) | ((mdxsl & 0x3F) << 6) | (mdysl & 0x3F);
-
-        var disdl = op.is_carrier ? 7 : 0;
-        var dipan = 16;
-        var dB = ((disdl & 0x7) << 13) | ((dipan & 0x1F) << 8);
-
-        scsp._scsp_write_slot(slot, 0x0, d0);
-        scsp._scsp_write_slot(slot, 0x1, sa & 0xFFFF);
-        scsp._scsp_write_slot(slot, 0x2, lsa);
-        scsp._scsp_write_slot(slot, 0x3, lea);
-        scsp._scsp_write_slot(slot, 0x4, d4);
-        scsp._scsp_write_slot(slot, 0x5, d5);
-        scsp._scsp_write_slot(slot, 0x6, d6);
-        scsp._scsp_write_slot(slot, 0x7, d7);
-        scsp._scsp_write_slot(slot, 0x8, octBits);
-        scsp._scsp_write_slot(slot, 0x9, 0);
-        scsp._scsp_write_slot(slot, 0xA, 0);
-        // Write DISDL/DIPAN (upper byte of 0xB) preserving EFSDL/EFPAN (lower byte)
-        scsp._scsp_slot_set_direct_output(slot, disdl, dipan);
-        if (slotPostProgramHook) slotPostProgramHook(slot);
+        writeSlotRegisters(slot, {
+            sa: sa, lsa: lsa, lea: lea, lpctl: lpctl,
+            d4: d4, d5: d5, tl: tl, d7: d7, octBits: octBits,
+            disdl: disdl, dipan: 16,
+        });
     }
 
     // ── programSlotRaw ─────────────────────────────────────────────────
 
     /**
      * @description Program a SCSP slot from raw TON register data. Only recalculates
-     * pitch (octave + FNS) and FM ring buffer offsets; all other register values are
-     * used as-is from the imported TON file.
+     * pitch (octave + FNS) and FM ring buffer offsets (to account for the current
+     * slot allocation); all other register values pass through from the imported TON.
+     *
+     * NOTE: pitch is computed as `semi = midiNote - rawRegs.baseNote` which assumes
+     * the TON format's baseNote convention (A4 → baseNote=69 when the sample's
+     * natural period matches 440 Hz, i.e. a 100-sample wave). For 1024-sample
+     * waves this is off by ~40 semitones — see project_bebhionn_basenote_bug.md.
+     * Preserving the existing behavior in this refactor to avoid silently shifting
+     * pitches on existing patches.
+     *
      * @param {number} slot - SCSP slot index (0-31)
      * @param {Object} rawRegs - Raw register values (d0, d4, d5, d7, tl, dB, baseNote, lsa, lea, sa)
      * @param {number} midiNote - MIDI note number to play (0-127)
      * @param {number} sa - Sample address (byte offset in SCSP RAM)
      * @param {number} slotBase - First slot index of this voice (for relative mod_source calculation)
-     * @param {number} opIndex - Operator index within the instrument
+     * @param {number} opIndex - Operator index within the instrument (currently unused but kept for future per-op routing)
      * @param {number} wavLen - Waveform length in samples (for clamping loop points)
      * @param {number} modSource - Modulation source operator index, or -1 for none/feedback
      */
     function programSlotRaw(slot, rawRegs, midiNote, sa, slotBase, opIndex, wavLen, modSource) {
-        var semi = midiNote - rawRegs.baseNote;
-        var octave = Math.max(-8, Math.min(7, Math.floor(semi / 12)));
-        var frac = semi - octave * 12;
-        var fns = Math.max(0, Math.min(1023, Math.round(1024 * (Math.pow(2, frac / 12) - 1))));
-        var octBits = ((octave & 0xF) << 11) | (fns & 0x3FF);
+        var octBits = computeOctFnsBits(midiNote, rawRegs.baseNote);
+        var d7 = remapD7Raw(rawRegs.d7, modSource, slot, slotBase);
+        var lpctl = (rawRegs.d0 >> 5) & 3;
 
-        var d0 = (rawRegs.d0 & 0xE0) | ((sa >> 16) & 0xF);
-        var lsa = Math.min(rawRegs.lsa, wavLen);
-        var lea = Math.min(rawRegs.lea, wavLen);
-
-        var d7 = rawRegs.d7;
-        var mdl = (d7 >> 12) & 0xF;
-        if (mdl > 0 && modSource >= 0) {
-            var modSlot = slotBase + modSource;
-            var mdxsl = (modSlot - slot) & 63;
-            var mdysl = mdxsl;
-            d7 = ((mdl & 0xF) << 12) | ((mdxsl & 0x3F) << 6) | (mdysl & 0x3F);
-        } else if (mdl > 0) {
-            var fbDist = 32;
-            d7 = ((mdl & 0xF) << 12) | ((fbDist & 0x3F) << 6) | (fbDist & 0x3F);
-        }
-
-        scsp._scsp_write_slot(slot, 0x0, d0);
-        scsp._scsp_write_slot(slot, 0x1, sa & 0xFFFF);
-        scsp._scsp_write_slot(slot, 0x2, lsa);
-        scsp._scsp_write_slot(slot, 0x3, lea);
-        scsp._scsp_write_slot(slot, 0x4, rawRegs.d4);
-        scsp._scsp_write_slot(slot, 0x5, rawRegs.d5);
-        scsp._scsp_write_slot(slot, 0x6, rawRegs.tl);
-        scsp._scsp_write_slot(slot, 0x7, d7);
-        scsp._scsp_write_slot(slot, 0x8, octBits);
-        scsp._scsp_write_slot(slot, 0x9, 0);
-        scsp._scsp_write_slot(slot, 0xA, 0);
-        // Write DISDL/DIPAN (upper byte) preserving EFSDL/EFPAN (lower byte)
-        var disdlR = (rawRegs.dB >> 13) & 7;
-        var dipanR = (rawRegs.dB >> 8) & 0x1F;
-        scsp._scsp_slot_set_direct_output(slot, disdlR, dipanR);
-        if (slotPostProgramHook) slotPostProgramHook(slot);
+        writeSlotRegisters(slot, {
+            sa: sa,
+            lsa: Math.min(rawRegs.lsa, wavLen),
+            lea: Math.min(rawRegs.lea, wavLen),
+            lpctl: lpctl,
+            d4: rawRegs.d4,
+            d5: rawRegs.d5,
+            tl: rawRegs.tl,
+            d7: d7,
+            octBits: octBits,
+            disdl: (rawRegs.dB >> 13) & 7,
+            dipan: (rawRegs.dB >> 8) & 0x1F,
+        });
     }
 
     // ── syncRawRegs ────────────────────────────────────────────────────
@@ -454,7 +517,7 @@ var SCSPEngine = (function() {
                     programSlotRaw(slots[i], op.rawRegs, midiNote, wav.offset, slotBase, i, wav.length, op.mod_source);
                 }
             } else {
-                programSlot(slots[i], op, midiNote, ops);
+                programSlot(slots[i], op, midiNote, slotBase);
             }
         }
         for (var s = 0; s < slots.length; s++) scsp._scsp_key_on(slots[s]);
@@ -793,6 +856,36 @@ var SCSPEngine = (function() {
             return _importBank(arrayBuffer, label);
         },
 
+        /** @description Import a DX7 SysEx bank (.syx) and convert all 32
+         *  voices into bebhionn instruments using the DX7Import module.
+         *  Resets SCSP so the built-in waveforms are freshly loaded (DX7
+         *  converted ops all use waveform 0, sine). Returns in the same
+         *  shape as importBank so tracker_ui's loadTonData flow works
+         *  directly.
+         *  @param {ArrayBuffer} arrayBuffer - Raw .syx file data
+         *  @param {string} label - Display name for messages
+         *  @returns {{instruments: ?Object[], message: string}} */
+        importDx7Sysex: function(arrayBuffer, label) {
+            if (typeof DX7Import === 'undefined' || !DX7Import) {
+                return { instruments: null, message: 'DX7Import module not loaded' };
+            }
+            try {
+                resetSCSP();
+                scspReady = true;
+                var instruments = DX7Import.convertBank(arrayBuffer, 6);
+                if (!instruments.length) {
+                    return { instruments: null, message: 'No audible voices in ' + label };
+                }
+                return {
+                    instruments: instruments,
+                    message: 'Imported ' + instruments.length + ' DX7 voices from ' + label
+                };
+            } catch (err) {
+                console.error('DX7 SysEx import error:', err);
+                return { instruments: null, message: 'Error importing ' + label + ': ' + err.message };
+            }
+        },
+
         /** @description Export instruments to TON binary format via TonIO.
          *  @param {Object[]} instruments - Array of instrument objects
          *  @returns {?Uint8Array} TON file bytes, or null if TonIO unavailable */
@@ -933,7 +1026,7 @@ var SCSPEngine = (function() {
                                 programSlotRaw(v.slots[i], op.rawRegs, v.note, wav.offset, slotBase, i, wav.length, op.mod_source);
                             }
                         } else {
-                            programSlot(v.slots[i], op, v.note, ops);
+                            programSlot(v.slots[i], op, v.note, slotBase);
                         }
                     }
                 }
