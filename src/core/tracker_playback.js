@@ -75,6 +75,7 @@ var TrackerPlayback = (function () {
                     if (untilNext <= 0) {
                         var pat = state.patterns[state.song[this.currentSongSlot]];
                         this.triggerRow(this.currentRow, pat);
+                        if (this.onRowChange) this.onRowChange(this.currentRow, this.currentSongSlot);
                         this.currentRow++;
                         if (this.currentRow >= pat.length) {
                             this.currentRow = 0;
@@ -84,7 +85,6 @@ var TrackerPlayback = (function () {
                             }
                         }
                         this.samplePos = 0;
-                        if (this.onRowChange) this.onRowChange(this.currentRow, this.currentSongSlot);
                         continue;
                     }
                     var advance = Math.min(remaining, untilNext);

@@ -49,39 +49,48 @@ var SCSPEngine = (function() {
     var waveStore = { waves: [], nextOffset: 0 };
     var slotPostProgramHook = null; // called after each slot is programmed: fn(slot)
 
-    // ── Preset instruments ─────────────────────────────────────────────
+    // ── Preset instruments (EBM / Industrial kit) ──────────────────────
     var PRESET_INSTRUMENTS = [
-        { name: 'Electric Piano', operators: [
-            { freq_ratio:2.0, freq_fixed:0, level:0.9, ar:31, d1r:12, dl:8, d2r:0, rr:14, mdl:0, mod_source:-1, feedback:0, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.0, freq_fixed:0, level:0.8, ar:31, d1r:6, dl:2, d2r:0, rr:14, mdl:9, mod_source:0, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+        // 1. FM Kick — fast-decaying modulator simulates pitch sweep; high MDL for transient click
+        { name: 'FM Kick', operators: [
+            { freq_ratio:1.0, freq_fixed:0, level:0.95, ar:31, d1r:24, dl:22, d2r:0, rr:26, mdl:0, mod_source:-1, feedback:0.15, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0, freq_fixed:0, level:0.95, ar:31, d1r:12, dl:8, d2r:4, rr:22, mdl:13, mod_source:0, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
-        { name: 'Bell', operators: [
-            { freq_ratio:3.5, freq_fixed:0, level:0.9, ar:31, d1r:4, dl:2, d2r:0, rr:8, mdl:0, mod_source:-1, feedback:0, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.0, freq_fixed:0, level:0.7, ar:31, d1r:2, dl:0, d2r:0, rr:6, mdl:11, mod_source:0, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+        // 2. Noise Snare — high feedback (0.45) + inharmonic ratio → noise-like texture
+        { name: 'Noise Snare', operators: [
+            { freq_ratio:3.53, freq_fixed:0, level:0.85, ar:31, d1r:16, dl:12, d2r:6, rr:20, mdl:0, mod_source:-1, feedback:0.45, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0,  freq_fixed:0, level:0.9,  ar:31, d1r:14, dl:10, d2r:4, rr:20, mdl:12, mod_source:0, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
-        { name: 'Brass', operators: [
-            { freq_ratio:1.0, freq_fixed:0, level:0.8, ar:24, d1r:4, dl:2, d2r:0, rr:14, mdl:0, mod_source:-1, feedback:0.3, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.0, freq_fixed:0, level:0.8, ar:22, d1r:2, dl:0, d2r:0, rr:14, mdl:9, mod_source:0, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+        // 3. Metal Hat — inharmonic ratios (5.19, 1.414) for metallic character; short decay
+        { name: 'Metal Hat', operators: [
+            { freq_ratio:5.19,  freq_fixed:0, level:0.9, ar:31, d1r:18, dl:14, d2r:8, rr:22, mdl:0,  mod_source:-1, feedback:0.2, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.414, freq_fixed:0, level:0.7, ar:31, d1r:20, dl:18, d2r:10, rr:24, mdl:11, mod_source:0, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
-        { name: 'Organ', operators: [
-            { freq_ratio:1.0, freq_fixed:0, level:0.7, ar:31, d1r:0, dl:0, d2r:0, rr:20, mdl:0, mod_source:-1, feedback:0.6, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.0, freq_fixed:0, level:0.8, ar:31, d1r:0, dl:0, d2r:0, rr:20, mdl:8, mod_source:0, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+        // 4. Acid Bass — self-feedback modulator (0.35) creates saw-like harmonics; high MDL for grit
+        { name: 'Acid Bass', operators: [
+            { freq_ratio:1.0, freq_fixed:0, level:0.9, ar:31, d1r:8,  dl:4, d2r:0, rr:16, mdl:0,  mod_source:-1, feedback:0.35, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0, freq_fixed:0, level:0.9, ar:31, d1r:10, dl:6, d2r:2, rr:16, mdl:11, mod_source:0,  feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
-        { name: 'FM Bass', operators: [
-            { freq_ratio:1.0, freq_fixed:0, level:0.9, ar:31, d1r:14, dl:10, d2r:0, rr:14, mdl:0, mod_source:-1, feedback:0.2, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.0, freq_fixed:0, level:0.9, ar:31, d1r:6, dl:4, d2r:0, rr:14, mdl:10, mod_source:0, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+        // 5. Harsh Lead — 3-op stacked chain (mod→mod→carrier); square-wave modulator for extra edge
+        { name: 'Harsh Lead', operators: [
+            { freq_ratio:3.0, freq_fixed:0, level:0.7,  ar:31, d1r:4, dl:2, d2r:0, rr:14, mdl:0,  mod_source:-1, feedback:0.25, is_carrier:false, waveform:2, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0, freq_fixed:0, level:0.85, ar:31, d1r:2, dl:0, d2r:0, rr:14, mdl:10, mod_source:0,  feedback:0, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0, freq_fixed:0, level:0.85, ar:31, d1r:2, dl:0, d2r:0, rr:14, mdl:11, mod_source:1,  feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
-        { name: 'Strings', operators: [
-            { freq_ratio:1.002, freq_fixed:0, level:0.5, ar:20, d1r:0, dl:0, d2r:0, rr:16, mdl:0, mod_source:-1, feedback:0, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.0, freq_fixed:0, level:0.7, ar:18, d1r:0, dl:0, d2r:0, rr:14, mdl:7, mod_source:0, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+        // 6. Dark Pad — slow attack, slight detune (1.003) for chorus warmth; strings waveform carrier
+        { name: 'Dark Pad', operators: [
+            { freq_ratio:1.003, freq_fixed:0, level:0.5, ar:16, d1r:0, dl:0, d2r:0, rr:12, mdl:0, mod_source:-1, feedback:0.15, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0,   freq_fixed:0, level:0.7, ar:16, d1r:0, dl:0, d2r:0, rr:12, mdl:7, mod_source:0,  feedback:0, is_carrier:true, waveform:6, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
-        { name: 'Clavinet', operators: [
-            { freq_ratio:3.0, freq_fixed:0, level:0.9, ar:31, d1r:16, dl:14, d2r:0, rr:18, mdl:0, mod_source:-1, feedback:0, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.0, freq_fixed:0, level:0.8, ar:31, d1r:10, dl:6, d2r:0, rr:16, mdl:10, mod_source:0, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+        // 7. Seq Pluck — fast-decaying modulator for percussive brightness; short body
+        { name: 'Seq Pluck', operators: [
+            { freq_ratio:2.0, freq_fixed:0, level:0.85, ar:31, d1r:18, dl:14, d2r:6, rr:20, mdl:0,  mod_source:-1, feedback:0.2, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0, freq_fixed:0, level:0.8,  ar:31, d1r:14, dl:10, d2r:4, rr:18, mdl:10, mod_source:0,  feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
-        { name: 'Marimba', operators: [
-            { freq_ratio:4.0, freq_fixed:0, level:0.8, ar:31, d1r:18, dl:16, d2r:0, rr:20, mdl:0, mod_source:-1, feedback:0, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.0, freq_fixed:0, level:0.8, ar:31, d1r:8, dl:4, d2r:0, rr:12, mdl:9, mod_source:0, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+        // 8. Industrial Hit — max feedback (0.5) = white noise source; inharmonic carrier + square wave for metallic body
+        { name: 'Industrial Hit', operators: [
+            { freq_ratio:1.0,  freq_fixed:0, level:0.9,  ar:31, d1r:14, dl:10, d2r:6, rr:18, mdl:0,  mod_source:-1, feedback:0.5, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.73, freq_fixed:0, level:0.85, ar:31, d1r:12, dl:8,  d2r:4, rr:18, mdl:13, mod_source:0,  feedback:0, is_carrier:true, waveform:2, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
     ];
 
@@ -710,7 +719,7 @@ var SCSPEngine = (function() {
             inp.min = p.min; inp.max = p.max; inp.step = p.step; inp.value = op[p.key] || 0;
             var val = document.createElement('span'); val.className = 'val'; val.textContent = p.fmt(op[p.key] || 0);
             (function(p2, inp2, val2) {
-                inp2.oninput = function() { op[p2.key] = parseFloat(inp2.value); val2.textContent = p2.fmt(op[p2.key]); syncRawRegs(op); };
+                inp2.oninput = function() { op[p2.key] = parseFloat(inp2.value); val2.textContent = p2.fmt(op[p2.key]); syncRawRegs(op); if (onChange) onChange({paramTweak: true}); };
             })(p, inp, val);
             row.appendChild(lbl); row.appendChild(inp); row.appendChild(val);
             container.appendChild(row);
