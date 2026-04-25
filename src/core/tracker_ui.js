@@ -139,6 +139,10 @@ var TrackerUI = (function() {
         const el = document.getElementById('ch-headers');
         el.innerHTML = '';
         const pat = getCurrentPattern();
+        // Spacer matches the grid's row-number gutter so each ch-hdr lines up with its column.
+        const spacer = document.createElement('div');
+        spacer.className = 'ch-hdr-spacer';
+        el.appendChild(spacer);
         for (let ch = 0; ch < NUM_CHANNELS; ch++) {
             const div = document.createElement('div');
             div.className = 'ch-hdr' + (TrackerState.getChannelState(ch) === 'muted' || (!TrackerState.isChannelAudible(ch) && TrackerState.getChannelState(ch) !== 'solo') ? ' muted' : '');
@@ -1005,6 +1009,10 @@ var TrackerUI = (function() {
                     state.patternLength = project.patternLength || 32;
                     state.instruments = project.instruments;
                     state.patterns = project.patterns;
+                    // Older projects may have fewer channels than NUM_CHANNELS — pad.
+                    for (var pi = 0; pi < state.patterns.length; pi++) {
+                        TrackerState.padPatternChannels(state.patterns[pi], state.instruments.length);
+                    }
                     state.song = project.song || [0];
                     state.cursor = { row: 0, ch: 0, col: 0 };
                     currentSongSlot = 0;
@@ -1129,7 +1137,7 @@ var TrackerUI = (function() {
         var bpmEl = document.getElementById('bpm');
         if (bpmEl) bpmEl.value = state.bpm;
 
-        var PL = 32, NC = 8;
+        var PL = 32, NC = TrackerState.NUM_CHANNELS;
 
         function mkPat() {
             var ch = [];

@@ -204,7 +204,9 @@ body { font-family: 'SF Mono', Consolas, Monaco, monospace; background: #0a0a1a;
 #slot-meter.full { color: #f66; }
 
 /* Channel headers */
-#ch-headers { display: flex; padding: 0 12px 0 42px; background: #14142e; border-bottom: 1px solid #333; flex-shrink: 0; }
+#ch-headers { display: flex; padding: 0; background: #14142e; border-bottom: 1px solid #333;
+              flex-shrink: 0; position: sticky; top: 0; z-index: 2; }
+.ch-hdr-spacer { width: 30px; min-width: 30px; flex-shrink: 0; border-right: 1px solid #222; background: #0d0d20; }
 .ch-hdr { flex: 1; min-width: 120px; padding: 4px 6px; font-size: 10px; color: #888;
            display: flex; align-items: center; gap: 4px; border-right: 1px solid #222; }
 .ch-hdr select { background: #1a1a2e; color: #aaa; border: 1px solid #333; padding: 1px 2px;
@@ -219,8 +221,9 @@ body { font-family: 'SF Mono', Consolas, Monaco, monospace; background: #0a0a1a;
 .cell.ch-muted { opacity: 0.3; }
 
 /* Pattern grid */
-#grid-container { flex: 1; overflow-y: auto; overflow-x: auto; }
-#grid { display: table; width: 100%; border-collapse: collapse; }
+#grid-scroll { flex: 1; overflow: auto; display: flex; flex-direction: column; }
+#grid-inner { min-width: max-content; display: flex; flex-direction: column; }
+#grid { display: flex; flex-direction: column; min-width: max-content; }
 .row { display: flex; border-bottom: 1px solid #111; }
 .row.beat { border-top: 2px solid #2a2a4e; }
 .row.playing { background: #1a2a1a; }
@@ -521,9 +524,11 @@ body { font-family: 'SF Mono', Consolas, Monaco, monospace; background: #0a0a1a;
 <div id="main-area">
   <!-- Grid wrapper -->
   <div id="grid-wrapper">
-    <div id="ch-headers"></div>
-    <div id="grid-container">
-      <div id="grid"></div>
+    <div id="grid-scroll">
+      <div id="grid-inner">
+        <div id="ch-headers"></div>
+        <div id="grid"></div>
+      </div>
     </div>
   </div>
 

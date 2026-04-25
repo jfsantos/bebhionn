@@ -290,6 +290,25 @@ var TrackerState = (function () {
         }
     }
 
+    // ── Pattern compatibility ──
+
+    /**
+     * Pad an existing pattern's channels up to NUM_CHANNELS, filling new channels
+     * with empty rows. Needed when loading projects saved before NUM_CHANNELS grew.
+     * Mutates and returns the pattern.
+     * @param {Object} pat - Pattern with {length, channels[]}
+     * @param {number} numInstruments - Used to clamp defaultInst on new channels.
+     */
+    function padPatternChannels(pat, numInstruments) {
+        if (!pat || !pat.channels) return pat;
+        for (var ch = pat.channels.length; ch < NUM_CHANNELS; ch++) {
+            var rows = [];
+            for (var r = 0; r < pat.length; r++) rows.push({ note: null, inst: null, vol: null });
+            pat.channels.push({ defaultInst: Math.min(ch, (numInstruments || 1) - 1), rows: rows });
+        }
+        return pat;
+    }
+
     // ── Hardware slot-budget accounting ──
 
     /**
@@ -337,6 +356,7 @@ var TrackerState = (function () {
         NUM_CHANNELS: NUM_CHANNELS,
         MAX_SLOTS: MAX_SLOTS,
         computeSongSlotUsage: computeSongSlotUsage,
+        padPatternChannels: padPatternChannels,
         KEY_NOTE_MAP: KEY_NOTE_MAP,
         create: create,
         createEmptyPattern: createEmptyPattern,
