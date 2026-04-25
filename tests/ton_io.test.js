@@ -2,7 +2,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const TonIO = require('../ton_io.js');
+const TonIO = require('../src/io/ton_io.js');
 
 // -- helpers --
 

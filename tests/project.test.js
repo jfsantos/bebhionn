@@ -159,10 +159,10 @@ describe('.beb project format', () => {
 describe('TrackerState.getChannelStates / setChannelStates', () => {
     beforeEach(() => { TrackerState.resetChannelState(); });
 
-    it('getChannelStates returns array of 8 states', () => {
+    it('getChannelStates returns array of NUM_CHANNELS states', () => {
         var states = TrackerState.getChannelStates();
-        assert.equal(states.length, 8);
-        for (var i = 0; i < 8; i++) {
+        assert.equal(states.length, TrackerState.NUM_CHANNELS);
+        for (var i = 0; i < TrackerState.NUM_CHANNELS; i++) {
             assert.equal(states[i], 'on');
         }
     });

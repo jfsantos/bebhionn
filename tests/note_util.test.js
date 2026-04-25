@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { NOTE_NAMES, noteName } = require('../note_util.js');
+const { NOTE_NAMES, noteName } = require('../src/core/note_util.js');
 
 describe('NOTE_NAMES', () => {
     it('has 12 entries', () => {

@@ -25,12 +25,12 @@ const sandbox = {
     SCSPModule: function() { return Promise.resolve(null); },
     SCSP_WASM_B64: '',
     TonIO: null,
-    TrackerState: require('../tracker_state.js'),
+    TrackerState: require('../src/core/tracker_state.js'),
 };
 sandbox.globalThis = sandbox;
 sandbox.self = sandbox;
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'scsp_engine.js'), 'utf8');
+const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'engines', 'scsp', 'scsp_engine.js'), 'utf8');
 vm.runInNewContext(src, sandbox);
 const SCSPEngine = sandbox.SCSPEngine;
 

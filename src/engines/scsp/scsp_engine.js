@@ -826,6 +826,36 @@ var SCSPEngine = (function() {
                     var outR = e.outputBuffer.numberOfChannels > 1 ? e.outputBuffer.getChannelData(1) : outL;
                     var n = outL.length;
                     if (!scspReady) { for (var i = 0; i < n; i++) { outL[i] = 0; outR[i] = 0; } return; }
+
+                    if (playbackRef && playbackRef.playing &&
+                        playbackRef.mode === 'seq' && playbackRef.processBlockSeq) {
+                        // Sample-accurate SEQ mode: dispatch events between scsp_render slices
+                        // so key-ons take effect at the precise sample, not just at block boundaries.
+                        var writeOffset = 0;
+                        playbackRef.processBlockSeq(n, function (slice) {
+                            if (slice <= 0) return;
+                            var bp = scsp._scsp_render(slice);
+                            var h16 = new Int16Array(scsp.HEAP16.buffer, bp, slice * 2);
+                            for (var k = 0; k < slice; k++) {
+                                outL[writeOffset + k] = h16[k * 2] / 32768.0;
+                                outR[writeOffset + k] = h16[k * 2 + 1] / 32768.0;
+                            }
+                            writeOffset += slice;
+                        });
+                        // Safety: render any leftover samples (shouldn't happen if processBlockSeq
+                        // accounts for the whole block, but guard against drift).
+                        if (writeOffset < n) {
+                            var rem = n - writeOffset;
+                            var bp2 = scsp._scsp_render(rem);
+                            var h16b = new Int16Array(scsp.HEAP16.buffer, bp2, rem * 2);
+                            for (var m = 0; m < rem; m++) {
+                                outL[writeOffset + m] = h16b[m * 2] / 32768.0;
+                                outR[writeOffset + m] = h16b[m * 2 + 1] / 32768.0;
+                            }
+                        }
+                        return;
+                    }
+
                     if (playbackRef && playbackRef.playing) playbackRef.processBlock(n);
                     var bufPtr = scsp._scsp_render(n);
                     var heap16 = new Int16Array(scsp.HEAP16.buffer, bufPtr, n * 2);

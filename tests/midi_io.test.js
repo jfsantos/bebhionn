@@ -2,9 +2,10 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { parseMIDI, buildMIDI } = require('../midi_io.js');
+const { parseMIDI, buildMIDI } = require('../src/io/midi_io.js');
 
 const MIDI_DIR = path.join(__dirname, '..', '..', 'tests', 'midi_test_files');
+const FIXTURES_AVAILABLE = fs.existsSync(MIDI_DIR);
 
 function readMidi(name) {
     const buf = fs.readFileSync(path.join(MIDI_DIR, name));
@@ -39,13 +40,18 @@ describe('parseMIDI', () => {
         assert.throws(() => parseMIDI(buf), /Not a MIDI file/);
     });
 
-    it('parses format, division, and track count', () => {
+    // Tests below depend on .mid fixtures that aren't checked into the repo.
+    // They auto-skip when the fixture directory is absent so the suite stays green
+    // for contributors without the fixtures, and runs in full where they exist.
+    const fixtureOpts = { skip: FIXTURES_AVAILABLE ? false : 'midi_test_files fixtures not present' };
+
+    it('parses format, division, and track count', fixtureOpts, () => {
         const midi = parseMIDI(readMidi('test_short_long.mid'));
         assert.equal(midi.format, 0);
         assert.equal(midi.division, 480);
     });
 
-    it('extracts note-on and note-off events', () => {
+    it('extracts note-on and note-off events', fixtureOpts, () => {
         const midi = parseMIDI(readMidi('test_short_long.mid'));
         const ons = midi.events.filter(e => e.type === 'on');
         const offs = midi.events.filter(e => e.type === 'off');
@@ -53,7 +59,7 @@ describe('parseMIDI', () => {
         assert.ok(offs.length >= 2, 'at least 2 note-offs');
     });
 
-    it('extracts tempo events with bpm and mspb', () => {
+    it('extracts tempo events with bpm and mspb', fixtureOpts, () => {
         const midi = parseMIDI(readMidi('test_short_long.mid'));
         const tempos = midi.events.filter(e => e.type === 'tempo');
         assert.ok(tempos.length >= 1, 'has a tempo event');
@@ -61,7 +67,7 @@ describe('parseMIDI', () => {
         assert.equal(tempos[0].mspb, 500000);
     });
 
-    it('extracts program change events', () => {
+    it('extracts program change events', fixtureOpts, () => {
         const midi = parseMIDI(readMidi('test_program_change.mid'));
         const pcs = midi.events.filter(e => e.type === 'pc');
         assert.ok(pcs.length >= 1, 'has program changes');
@@ -69,14 +75,13 @@ describe('parseMIDI', () => {
         assert.equal(typeof pcs[0].ch, 'number');
     });
 
-    it('handles multi-channel files', () => {
+    it('handles multi-channel files', fixtureOpts, () => {
         const midi = parseMIDI(readMidi('test_multi_channel.mid'));
         const channels = new Set(midi.events.filter(e => e.type === 'on').map(e => e.ch));
         assert.ok(channels.size >= 2, 'at least 2 channels');
     });
 
-    it('note-off via velocity 0 is typed as off', () => {
-        // MIDI spec: note-on with vel=0 is a note-off
+    it('note-off via velocity 0 is typed as off', fixtureOpts, () => {
         const midi = parseMIDI(readMidi('test_short_long.mid'));
         for (const ev of midi.events) {
             if (ev.type === 'on') assert.ok(ev.vel > 0);
@@ -84,7 +89,7 @@ describe('parseMIDI', () => {
         }
     });
 
-    it('events have monotonically non-decreasing absTime per track', () => {
+    it('events have monotonically non-decreasing absTime per track', fixtureOpts, () => {
         const midi = parseMIDI(readMidi('test_large_delta.mid'));
         for (let i = 1; i < midi.events.length; i++) {
             assert.ok(midi.events[i].absTime >= midi.events[i - 1].absTime,

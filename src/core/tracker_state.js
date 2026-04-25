@@ -7,8 +7,14 @@
 var TrackerState = (function () {
     'use strict';
 
-    /** @constant {number} Number of tracker channels */
-    var NUM_CHANNELS = 8;
+    /** @constant {number} Number of tracker channels.
+     *  Capped at 16 because the Saturn SEQ format and MIDI channel field both use a
+     *  4-bit channel low-nibble (0x90 | ch). Hardware polyphony is bounded separately
+     *  by MAX_SLOTS (=32) summed over all sounding instruments' operator counts —
+     *  see computeSongSlotUsage. */
+    var NUM_CHANNELS = 16;
+    /** @constant {number} SCSP slot budget — hardware polyphony limit. */
+    var MAX_SLOTS = 32;
 
     /**
      * ProTracker-style keyboard to note offset mapping.
@@ -284,10 +290,53 @@ var TrackerState = (function () {
         }
     }
 
+    // ── Hardware slot-budget accounting ──
+
+    /**
+     * Walk every row of the unrolled song and compute peak simultaneous SCSP slot usage.
+     * For each channel we track the operator count of the currently sounding instrument;
+     * a `note === -1` cell zeros it, a positive note sets it to the new instrument's
+     * operator count. Sum per row, then take the max — that's the song's polyphony cost.
+     *
+     * @param {Object} state - Tracker state.
+     * @returns {{peak: number, peakSongSlot: number, peakRow: number, max: number}}
+     */
+    function computeSongSlotUsage(state) {
+        var perChOps = new Array(NUM_CHANNELS).fill(0);
+        var peak = 0;
+        var peakSongSlot = 0, peakRow = 0;
+        if (!state.song || state.song.length === 0) {
+            return { peak: 0, peakSongSlot: 0, peakRow: 0, max: MAX_SLOTS };
+        }
+        for (var s = 0; s < state.song.length; s++) {
+            var pat = state.patterns[state.song[s]];
+            if (!pat) continue;
+            for (var r = 0; r < pat.length; r++) {
+                for (var ch = 0; ch < NUM_CHANNELS; ch++) {
+                    var cell = pat.channels[ch].rows[r];
+                    if (cell.note === -1) {
+                        perChOps[ch] = 0;
+                    } else if (cell.note !== null && cell.note >= 0) {
+                        var instIdx = cell.inst !== null ? cell.inst : pat.channels[ch].defaultInst;
+                        var inst = state.instruments[instIdx];
+                        var ops = (inst && inst.operators && inst.operators.length) || 1;
+                        perChOps[ch] = ops;
+                    }
+                }
+                var rowSum = 0;
+                for (var c2 = 0; c2 < NUM_CHANNELS; c2++) rowSum += perChOps[c2];
+                if (rowSum > peak) { peak = rowSum; peakSongSlot = s; peakRow = r; }
+            }
+        }
+        return { peak: peak, peakSongSlot: peakSongSlot, peakRow: peakRow, max: MAX_SLOTS };
+    }
+
     // ── Public API ──
 
     var api = {
         NUM_CHANNELS: NUM_CHANNELS,
+        MAX_SLOTS: MAX_SLOTS,
+        computeSongSlotUsage: computeSongSlotUsage,
         KEY_NOTE_MAP: KEY_NOTE_MAP,
         create: create,
         createEmptyPattern: createEmptyPattern,

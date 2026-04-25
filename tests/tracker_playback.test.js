@@ -1,7 +1,7 @@
 const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
-const TrackerState = require('../tracker_state.js');
-const TrackerPlayback = require('../tracker_playback.js');
+const TrackerState = require('../src/core/tracker_state.js');
+const TrackerPlayback = require('../src/core/tracker_playback.js');
 
 // Mock engine that records calls
 function createMockEngine() {

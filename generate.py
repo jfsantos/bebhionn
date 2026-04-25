@@ -199,6 +199,9 @@ body { font-family: 'SF Mono', Consolas, Monaco, monospace; background: #0a0a1a;
 #transport select { width: auto; }
 .transport-group { display: flex; align-items: center; gap: 4px; }
 .transport-sep { color: #333; }
+#slot-meter { font-family: monospace; color: #4cf; font-weight: bold; }
+#slot-meter.warn { color: #fc4; }
+#slot-meter.full { color: #f66; }
 
 /* Channel headers */
 #ch-headers { display: flex; padding: 0 12px 0 42px; background: #14142e; border-bottom: 1px solid #333; flex-shrink: 0; }
@@ -495,6 +498,11 @@ body { font-family: 'SF Mono', Consolas, Monaco, monospace; background: #0a0a1a;
   <div class="transport-group">
     <label>Step</label>
     <input id="edit-step" type="number" value="1" min="0" max="16" style="width:35px;" title="Edit step — rows to advance after entering a note (0 = stay in place)">
+  </div>
+  <span class="transport-sep">|</span>
+  <div class="transport-group">
+    <label>Slots</label>
+    <span id="slot-meter" title="Peak simultaneous SCSP slots used by this song. Hardware budget is 32 — the tracker will refuse note edits that exceed this.">0/32</span>
   </div>
 </div>
 

@@ -337,17 +337,24 @@ var TrackerUI = (function() {
             if (hexDigit >= 0) {
                 e.preventDefault();
                 const cell = pat.channels[cur.ch].rows[cur.row];
+                const snap = { note: cell.note, inst: cell.inst, vol: cell.vol };
                 if (cur.col === 1) {
                     // Instrument: two hex digits, shift left and add
                     const prev = cell.inst !== null ? cell.inst : 0;
                     cell.inst = ((prev & 0x0F) << 4) | hexDigit;
                     if (cell.inst >= state.instruments.length) cell.inst = state.instruments.length - 1;
+                    if (!commitCellEdit(cell, snap, 'Instrument change')) {
+                        renderGrid();
+                        updateSlotMeter();
+                        return;
+                    }
                 } else {
                     // Volume: two hex digits, shift left and add (0x00-0x7F)
                     const prev = cell.vol !== null ? cell.vol : 0;
                     cell.vol = Math.min(127, ((prev & 0x0F) << 4) | hexDigit);
                 }
                 renderGrid();
+                updateSlotMeter();
                 return;
             }
         }
@@ -370,8 +377,15 @@ var TrackerUI = (function() {
             if (midi < 0 || midi > 127) return;
 
             const cell = pat.channels[cur.ch].rows[cur.row];
+            const snap = { note: cell.note, inst: cell.inst, vol: cell.vol };
             cell.note = midi;
             if (cell.inst === null) cell.inst = pat.channels[cur.ch].defaultInst;
+
+            if (!commitCellEdit(cell, snap, 'Note entry')) {
+                renderGrid();
+                updateSlotMeter();
+                return;
+            }
 
             // Preview the note
             await engine.init();
@@ -383,6 +397,7 @@ var TrackerUI = (function() {
 
             cur.row = Math.min(cur.row + getEditStep(), pat.length - 1);
             renderGrid();
+            updateSlotMeter();
             return;
         }
     }
@@ -391,16 +406,26 @@ var TrackerUI = (function() {
     // TRANSPORT CONTROLS
     // ═══════════════════════════════════════════════════════════════
 
-    /** @description Toggle playback start/stop. Initializes audio engine on first play. */
+    /** @description Toggle song playback. Always renders the song to a SEQ and plays it
+     *  sample-accurately. Live note auditioning during composition still uses the engine's
+     *  triggerNote/releaseChannel directly — this is only the transport Play button. */
     async function togglePlay() {
         await engine.init();
         engine.startAudio(playback);
         if (playback.playing) {
             playback.stop();
-        } else {
-            playback.start(state.cursor.row, currentSongSlot);
-            document.getElementById('btn-play').classList.add('active');
+            return;
         }
+        var seqBytes = buildSEQ({
+            patterns: state.patterns,
+            song: state.song,
+            bpm: state.bpm,
+            stepsPerBeat: state.stepsPerBeat,
+            numChannels: NUM_CHANNELS,
+            mutedChannels: getMutedChannels(),
+        });
+        playback.startSeqPlayback(seqBytes);
+        document.getElementById('btn-play').classList.add('active');
     }
 
     /** @description Stop playback. */
@@ -486,6 +511,39 @@ var TrackerUI = (function() {
         renderChannelHeaders();
         renderGrid();
         renderInstList();
+        updateSlotMeter();
+    }
+
+    /** @description Refresh the "Slots: N/32" indicator in the transport bar. */
+    function updateSlotMeter() {
+        var el = document.getElementById('slot-meter');
+        if (!el) return;
+        var u = TrackerState.computeSongSlotUsage(state);
+        el.textContent = u.peak + '/' + u.max;
+        el.classList.remove('warn', 'full');
+        if (u.peak > u.max) el.classList.add('full');
+        else if (u.peak > u.max * 0.75) el.classList.add('warn');
+    }
+
+    /**
+     * @description Apply a cell mutation, then check the song-wide slot budget.
+     * If the change pushes peak slot usage past hardware (MAX_SLOTS=32), revert
+     * the cell, surface a status message, and return false. Otherwise return true.
+     * @param {Object} cell - The pattern cell being edited.
+     * @param {Object} prev - Snapshot {note, inst, vol} taken before the edit.
+     * @param {string} action - Short description for the rejection message.
+     */
+    function commitCellEdit(cell, prev, action) {
+        var u = TrackerState.computeSongSlotUsage(state);
+        if (u.peak > u.max) {
+            cell.note = prev.note;
+            cell.inst = prev.inst;
+            cell.vol = prev.vol;
+            showStatus(action + ' refused: would use ' + u.peak + '/' + u.max +
+                ' slots at song slot ' + u.peakSongSlot + ' row ' + u.peakRow.toString(16).toUpperCase());
+            return false;
+        }
+        return true;
     }
 
     // ═══════════════════════════════════════════════════════════════

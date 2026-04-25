@@ -2,8 +2,8 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { parseSEQ, buildSEQ } = require('../seq_io.js');
-const { parseMIDI } = require('../midi_io.js');
+const { parseSEQ, buildSEQ } = require('../src/io/seq_io.js');
+const { parseMIDI } = require('../src/io/midi_io.js');
 
 // -- helpers --
 

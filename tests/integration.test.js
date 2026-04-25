@@ -1,9 +1,9 @@
 const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
-const TrackerState = require('../tracker_state.js');
-const TrackerPlayback = require('../tracker_playback.js');
-const { parseMIDI, buildMIDI } = require('../midi_io.js');
-const { parseSEQ, buildSEQ } = require('../seq_io.js');
+const TrackerState = require('../src/core/tracker_state.js');
+const TrackerPlayback = require('../src/core/tracker_playback.js');
+const { parseMIDI, buildMIDI } = require('../src/io/midi_io.js');
+const { parseSEQ, buildSEQ } = require('../src/io/seq_io.js');
 
 /**
  * Integration tests verifying the full flow:

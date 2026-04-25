@@ -1,10 +1,10 @@
 const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
-const TrackerState = require('../tracker_state.js');
+const TrackerState = require('../src/core/tracker_state.js');
 
 describe('TrackerState.NUM_CHANNELS', () => {
-    it('equals 8', () => {
-        assert.equal(TrackerState.NUM_CHANNELS, 8);
+    it('equals 16 (MIDI/SEQ channel ceiling)', () => {
+        assert.equal(TrackerState.NUM_CHANNELS, 16);
     });
 });
 
@@ -55,7 +55,7 @@ describe('TrackerState.create', () => {
     it('first pattern has correct length', () => {
         var state = TrackerState.create();
         assert.equal(state.patterns[0].length, 32);
-        assert.equal(state.patterns[0].channels.length, 8);
+        assert.equal(state.patterns[0].channels.length, TrackerState.NUM_CHANNELS);
     });
 });
 
@@ -64,7 +64,7 @@ describe('TrackerState.createEmptyPattern', () => {
         var state = TrackerState.create();
         var pat = TrackerState.createEmptyPattern(state, 16);
         assert.equal(pat.length, 16);
-        assert.equal(pat.channels.length, 8);
+        assert.equal(pat.channels.length, TrackerState.NUM_CHANNELS);
         assert.equal(pat.channels[0].rows.length, 16);
     });
 
@@ -81,7 +81,7 @@ describe('TrackerState.createEmptyPattern', () => {
         var state = TrackerState.create([{ name: 'A', operators: [] }]);
         var pat = TrackerState.createEmptyPattern(state, 4);
         // Only 1 instrument, so all channels should have defaultInst = 0
-        for (var ch = 0; ch < 8; ch++) {
+        for (var ch = 0; ch < TrackerState.NUM_CHANNELS; ch++) {
             assert.equal(pat.channels[ch].defaultInst, 0);
         }
     });
@@ -227,16 +227,111 @@ describe('Channel mute/solo', () => {
 
     it('toggleSolo returns all non-solo channels as silenced', () => {
         var silenced = TrackerState.toggleSolo(2);
-        assert.equal(silenced.length, 7); // all except ch 2
+        assert.equal(silenced.length, TrackerState.NUM_CHANNELS - 1); // all except ch 2
         assert.ok(!silenced.includes(2));
     });
 
     it('toggleSolo unsolos when toggled again', () => {
         TrackerState.toggleSolo(2);
         TrackerState.toggleSolo(2);
-        // All channels should be audible again
-        for (var ch = 0; ch < 8; ch++) {
+        for (var ch = 0; ch < TrackerState.NUM_CHANNELS; ch++) {
             assert.ok(TrackerState.isChannelAudible(ch));
         }
+    });
+});
+
+// ─── Slot budget ────────────────────────────────────────────────────────
+
+describe('TrackerState.computeSongSlotUsage', () => {
+    function makeState(instOps) {
+        var instruments = instOps.map(function (n, i) {
+            var ops = [];
+            for (var k = 0; k < n; k++) ops.push({ ar: 31 });
+            return { name: 'I' + i, operators: ops };
+        });
+        return TrackerState.create(instruments);
+    }
+
+    it('reports 0 for empty patterns', () => {
+        var s = makeState([1]);
+        var u = TrackerState.computeSongSlotUsage(s);
+        assert.equal(u.peak, 0);
+        assert.equal(u.max, 32);
+    });
+
+    it('counts a single 4-op note as 4 slots', () => {
+        var s = makeState([4]);
+        s.patterns[0].channels[0].rows[0] = { note: 60, inst: 0, vol: null };
+        var u = TrackerState.computeSongSlotUsage(s);
+        assert.equal(u.peak, 4);
+    });
+
+    it('sums per-channel ops on the same row', () => {
+        var s = makeState([2, 3]);
+        s.patterns[0].channels[0].rows[0] = { note: 60, inst: 0, vol: null };
+        s.patterns[0].channels[1].rows[0] = { note: 64, inst: 1, vol: null };
+        var u = TrackerState.computeSongSlotUsage(s);
+        assert.equal(u.peak, 5);
+    });
+
+    it('keeps a sustained note counted on later rows', () => {
+        var s = makeState([3]);
+        s.patterns[0].channels[0].rows[0] = { note: 60, inst: 0, vol: null };
+        // Subsequent rows on ch 0 are blank; the voice keeps sounding.
+        var u = TrackerState.computeSongSlotUsage(s);
+        assert.equal(u.peak, 3);
+    });
+
+    it('note-off zeros the channel cost', () => {
+        var s = makeState([4]);
+        s.patterns[0].channels[0].rows[0] = { note: 60, inst: 0, vol: null };
+        s.patterns[0].channels[0].rows[1] = { note: -1, inst: null, vol: null };
+        // After row 1, ch 0 contributes 0. Peak should be 4 (only at row 0).
+        var u = TrackerState.computeSongSlotUsage(s);
+        assert.equal(u.peak, 4);
+        assert.equal(u.peakRow, 0);
+    });
+
+    it('handles 16 channels chord — full SCSP budget', () => {
+        // 16 channels x 2 ops = 32 slots, exactly at limit.
+        var s = makeState([2]);
+        for (var ch = 0; ch < 16; ch++) {
+            s.patterns[0].channels[ch].rows[0] = { note: 60 + ch, inst: 0, vol: null };
+        }
+        var u = TrackerState.computeSongSlotUsage(s);
+        assert.equal(u.peak, 32);
+        assert.ok(u.peak <= u.max, 'at the budget but not over');
+    });
+
+    it('detects over-budget combinations', () => {
+        // 16 channels x 3 ops = 48 — way over.
+        var s = makeState([3]);
+        for (var ch = 0; ch < 16; ch++) {
+            s.patterns[0].channels[ch].rows[0] = { note: 60, inst: 0, vol: null };
+        }
+        var u = TrackerState.computeSongSlotUsage(s);
+        assert.ok(u.peak > u.max, 'peak ' + u.peak + ' should exceed ' + u.max);
+    });
+
+    it('reports the peak row across multiple song slots', () => {
+        var s = makeState([1, 4]);
+        s.patterns.push(TrackerState.createEmptyPattern(s, 4));
+        s.song = [0, 1];
+        // Pattern 0: ch 0 plays inst 0 (1 op) — peak 1
+        s.patterns[0].channels[0].rows[0] = { note: 60, inst: 0, vol: null };
+        // Pattern 1 (slot 1): ch 0 plays inst 1 (4 ops) at row 2 — peak 4
+        s.patterns[1].channels[0].rows[2] = { note: 64, inst: 1, vol: null };
+        var u = TrackerState.computeSongSlotUsage(s);
+        assert.equal(u.peak, 4);
+        assert.equal(u.peakSongSlot, 1);
+        assert.equal(u.peakRow, 2);
+    });
+
+    it('uses defaultInst when cell.inst is null', () => {
+        var s = makeState([1, 4]);
+        s.patterns[0].channels[0].defaultInst = 1;
+        s.patterns[0].channels[0].rows[0] = { note: 60, inst: null, vol: null };
+        var u = TrackerState.computeSongSlotUsage(s);
+        assert.equal(u.peak, 4);
     });
 });
