@@ -1,246 +1,288 @@
+// license:BSD-3-Clause
+// copyright-holders:ElSemi, R. Belmont
 /*
+    SCSP (YMF292-F) header — freestanding port
 
-	SCSP (YMF292-F) header
+    Stripped of MAME framework dependencies (device_t, sound_stream,
+    emu_timer, devcb, device_rom_interface) so the chip can be embedded
+    in any host that supplies a 256 KB or 512 KB sound RAM buffer and
+    pumps samples via render(int16_t*, int).
+
+    Behavioral notes:
+      - Host owns sound RAM; pass it once via init(ram, ram_size).
+        ram_size must be a power of two (typically 256 KB or 512 KB
+        for Saturn cart / Saturn console respectively).
+      - Sample rate is clock() / 512. Default clock 22.579200 MHz
+        gives the standard ~44.1 kHz output.
+      - render() takes a count of stereo sample-pairs and writes
+        interleaved int16_t L/R into the caller's buffer.
+      - Internal timers (TIMA/B/C) are decremented per sample inside
+        render(); the user-supplied IRQ callback fires when one expires.
 */
 
-#ifndef _SCSP_H_
-#define _SCSP_H_
+#ifndef SCSP_MAME_SCSP_H
+#define SCSP_MAME_SCSP_H
 
-#define MAX_SCSP	(2)
+#pragma once
 
-#define COMBINE_DATA(varptr)	(*(varptr) = (*(varptr) & mem_mask) | (data & ~mem_mask))
+#include "scspdsp.h"
 
-// convert AO types
-typedef int8 data8_t;
-typedef int16 data16_t;
-typedef int32 data32_t;
-typedef int offs_t;
+#include <cstdint>
 
-/*
-    SCSP features 32 programmable slots
-    that can generate FM and PCM (from ROM/RAM) sound
-*/
 
-//SLOT PARAMETERS
-#define KEYONEX(slot)		((slot->udata.data[0x0]>>0x0)&0x1000)
-#define KEYONB(slot)		((slot->udata.data[0x0]>>0x0)&0x0800)
-#define SBCTL(slot)		((slot->udata.data[0x0]>>0x9)&0x0003)
-#define SSCTL(slot)		((slot->udata.data[0x0]>>0x7)&0x0003)
-#define LPCTL(slot)		((slot->udata.data[0x0]>>0x5)&0x0003)
-#define PCM8B(slot)		((slot->udata.data[0x0]>>0x0)&0x0010)
+// Compile-time switch retained from upstream MAME. 0 disables the FM
+// pre-fetch delay; the upstream comment notes the driver-recommended
+// value of 4 sounds distorted, so it stays at 0.
+#define SCSP_FM_DELAY    0
 
-#define SA(slot)		(((slot->udata.data[0x0]&0xF)<<16)|(slot->udata.data[0x1]))
 
-#define LSA(slot)		(slot->udata.data[0x2])
-
-#define LEA(slot)		(slot->udata.data[0x3])
-
-#define D2R(slot)		((slot->udata.data[0x4]>>0xB)&0x001F)
-#define D1R(slot)		((slot->udata.data[0x4]>>0x6)&0x001F)
-#define EGHOLD(slot)		((slot->udata.data[0x4]>>0x0)&0x0020)
-#define AR(slot)		((slot->udata.data[0x4]>>0x0)&0x001F)
-
-#define LPSLNK(slot)		((slot->udata.data[0x5]>>0x0)&0x4000)
-#define KRS(slot)		((slot->udata.data[0x5]>>0xA)&0x000F)
-#define DL(slot)		((slot->udata.data[0x5]>>0x5)&0x001F)
-#define RR(slot)		((slot->udata.data[0x5]>>0x0)&0x001F)
-
-#define STWINH(slot)		((slot->udata.data[0x6]>>0x0)&0x0200)
-#define SDIR(slot)		((slot->udata.data[0x6]>>0x0)&0x0100)
-#define TL(slot)		((slot->udata.data[0x6]>>0x0)&0x00FF)
-
-#define MDL(slot)		((slot->udata.data[0x7]>>0xC)&0x000F)
-#define MDXSL(slot)		((slot->udata.data[0x7]>>0x6)&0x003F)
-#define MDYSL(slot)		((slot->udata.data[0x7]>>0x0)&0x003F)
-
-#define OCT(slot)		((slot->udata.data[0x8]>>0xB)&0x000F)
-#define FNS(slot)		((slot->udata.data[0x8]>>0x0)&0x03FF)
-
-#define LFORE(slot)		((slot->udata.data[0x9]>>0x0)&0x8000)
-#define LFOF(slot)		((slot->udata.data[0x9]>>0xA)&0x001F)
-#define PLFOWS(slot)		((slot->udata.data[0x9]>>0x8)&0x0003)
-#define PLFOS(slot)		((slot->udata.data[0x9]>>0x5)&0x0007)
-#define ALFOWS(slot)		((slot->udata.data[0x9]>>0x3)&0x0003)
-#define ALFOS(slot)		((slot->udata.data[0x9]>>0x0)&0x0007)
-
-#define ISEL(slot)		((slot->udata.data[0xA]>>0x3)&0x000F)
-#define IMXL(slot)		((slot->udata.data[0xA]>>0x0)&0x0007)
-
-#define DISDL(slot)		((slot->udata.data[0xB]>>0xD)&0x0007)
-#define DIPAN(slot)		((slot->udata.data[0xB]>>0x8)&0x001F)
-#define EFSDL(slot)		((slot->udata.data[0xB]>>0x5)&0x0007)
-#define EFPAN(slot)		((slot->udata.data[0xB]>>0x0)&0x001F)
-
-typedef enum {ATTACK,DECAY1,DECAY2,RELEASE} _STATE;
-struct _EG
-{
-	int volume;	//
-	_STATE state;
-	int step;
-	//step vals
-	int AR;		//Attack
-	int D1R;	//Decay1
-	int D2R;	//Decay2
-	int RR;		//Release
-
-	int DL;		//Decay level
-	UINT8 EGHOLD;
-	UINT8 LPLINK;
+// IRQ-line state values (replacements for MAME's ASSERT_LINE/CLEAR_LINE/HOLD_LINE).
+enum scsp_irq_state {
+	SCSP_IRQ_CLEAR  = 0,
+	SCSP_IRQ_ASSERT = 1,
+	SCSP_IRQ_HOLD   = 2,
 };
 
-struct _LFO
+class scsp_device
 {
-	unsigned short phase;
-	UINT32 phase_step;
-	int *table;
-	int *scale;
-};
+public:
+	// Default clock matches Saturn SCSP (22.579200 MHz → 44.1 kHz output).
+	scsp_device(uint32_t clock = 22'579'200);
 
-struct _SLOT
-{
+	// Lifecycle. Call init() exactly once before any other operation; it
+	// builds the envelope/pan/LFO tables and hooks the host-supplied
+	// sound RAM into the DSP. ram must remain valid for the lifetime of
+	// this scsp_device. ram_size must be a power of two.
+	void init(uint8_t *ram, uint32_t ram_size);
+	void set_clock(uint32_t clock);
+	uint32_t clock() const { return m_clock; }
+
+	// IRQ callbacks. line is the SCSP-internal interrupt index (decoded
+	// via SCILV); state is one of SCSP_IRQ_*. main_irq fires only the
+	// SCU-side level (state = 0 or 1).
+	void set_irq_cb(void (*cb)(int line, int state)) { m_irq_cb = cb; }
+	void set_main_irq_cb(void (*cb)(int state))      { m_main_irq_cb = cb; }
+
+	// Master output gain (0.0 .. 1.0), per channel. Defaults to 1.0/1.0.
+	// Applied as a final multiplier in render().
+	void set_output_gain(int channel, float gain) { if (channel >= 0 && channel < 2) m_output_gain[channel] = gain; }
+
+	// Render n_frames stereo sample-pairs to out[0..2*n_frames-1] as
+	// interleaved L/R int16_t. Internal timers are advanced per frame.
+	void render(int16_t *out, int n_frames);
+
+	// Optional per-slot output capture. When `buf` is non-NULL, render()
+	// writes each slot's per-frame contribution to the LEFT direct-mix
+	// bus (post-EG, post-DISDL/DIPAN) into buf, with layout:
+	//     buf[frame * 32 + slot]   for frame in 0..n_frames-1
+	// Modulator slots (DISDL=0) naturally emit zero through this path.
+	// Pass NULL to disable; the setting persists across render() calls.
+	void set_slot_capture_buffer(int16_t *buf) { m_slotCapBuf = buf; }
+
+	// SCSP register access. offset is a 16-bit-word index into the SCSP
+	// register space (i.e. byte address >> 1), 0x000..0x7FF.
+	uint16_t read(uint32_t offset);
+	void     write(uint32_t offset, uint16_t data, uint16_t mem_mask = 0xFFFF);
+
+	// MIDI I/O access (used for comms on Model 2/3).
+	void     midi_in(uint8_t data);
+	uint16_t midi_out_r();
+	void     midi_out_w(uint8_t data);
+
+private:
+	enum SCSP_STATE { SCSP_ATTACK, SCSP_DECAY1, SCSP_DECAY2, SCSP_RELEASE };
+
+	struct SCSP_EG_t
+	{
+		int volume; //
+		SCSP_STATE state;
+		int step;
+		//step vals
+		int AR;     //Attack
+		int D1R;    //Decay1
+		int D2R;    //Decay2
+		int RR;     //Release
+
+		int DL;     //Decay level
+		uint8_t EGHOLD;
+		uint8_t LPLINK;
+	};
+
+	struct SCSP_LFO_t
+	{
+		uint16_t phase;
+		uint32_t phase_step;
+		int *table;
+		int *scale;
+	};
+
+public:
+	struct SCSP_SLOT
+	{
+		union
+		{
+			uint16_t data[0x10];  //only 0x1a bytes used
+			uint8_t  datab[0x20];
+		} udata;
+
+		uint8_t  Backwards;    //the wave is playing backwards
+		uint8_t  active;       //this slot is currently playing
+		uint32_t cur_addr;     //current play address (24.8)
+		uint32_t nxt_addr;     //next play address
+		uint32_t step;         //pitch step (24.8)
+		SCSP_EG_t  EG;         //Envelope
+		SCSP_LFO_t PLFO;       //Phase LFO
+		SCSP_LFO_t ALFO;       //Amplitude LFO
+		int slot;
+		int16_t Prev;          //Previous sample (for interpolation)
+	};
+
+	// Public state — the bridge layer (extern/scsp_mame/scsp_bridge.cpp)
+	// reads slot/common register snapshots and writes the DSP arrays
+	// directly via these members.
 	union
 	{
-		UINT16 data[0x10];	//only 0x1a bytes used
-		UINT8 datab[0x20];
-	} udata;
-	UINT8 active;	//this slot is currently playing
-	UINT8 *base;		//samples base address
-	UINT32 cur_addr;	//current play address (24.8)
-	UINT32 nxt_addr;	//next play address
-	UINT32 step;		//pitch step (24.8)
-	UINT8 Backwards;	//the wave is playing backwards
-	struct _EG EG;			//Envelope
-	struct _LFO PLFO;		//Phase LFO
-	struct _LFO ALFO;		//Amplitude LFO
-	int slot;
-	signed short Prev;	//Previous sample (for interpolation)
-};
+		uint16_t data[0x30/2];
+		uint8_t  datab[0x30];
+	} m_udata;
 
-#define MEM4B(scsp)		((scsp->udata.data[0]>>0x0)&0x0200)
-#define DAC18B(scsp)		((scsp->udata.data[0]>>0x0)&0x0100)
-#define MVOL(scsp)		((scsp->udata.data[0]>>0x0)&0x000F)
-#define RBL(scsp)		((scsp->udata.data[1]>>0x7)&0x0003)
-#define RBP(scsp)		((scsp->udata.data[1]>>0x0)&0x003F)
-#define MOFULL(scsp)   		((scsp->udata.data[2]>>0x0)&0x1000)
-#define MOEMPTY(scsp)		((scsp->udata.data[2]>>0x0)&0x0800)
-#define MIOVF(scsp)		((scsp->udata.data[2]>>0x0)&0x0400)
-#define MIFULL(scsp)		((scsp->udata.data[2]>>0x0)&0x0200)
-#define MIEMPTY(scsp)		((scsp->udata.data[2]>>0x0)&0x0100)
+	SCSP_SLOT m_Slots[32];
+	SCSPDSP m_DSP;
 
-#define SCILV0(scsp)    	((scsp->udata.data[0x24/2]>>0x0)&0xff)
-#define SCILV1(scsp)    	((scsp->udata.data[0x26/2]>>0x0)&0xff)
-#define SCILV2(scsp)    	((scsp->udata.data[0x28/2]>>0x0)&0xff)
+private:
+	// Per-instance clock + sound RAM.
+	uint32_t m_clock;
+	uint8_t *m_RAM;       // host-supplied
+	uint32_t m_RAMMask;   // (ram_size - 1)
 
-#define SCIEX0	0
-#define SCIEX1	1
-#define SCIEX2	2
-#define SCIMID	3
-#define SCIDMA	4
-#define SCIIRQ	5
-#define SCITMA	6
-#define SCITMB	7
+	// IRQ callbacks (nullptr until set).
+	void (*m_irq_cb)(int line, int state)  = nullptr;
+	void (*m_main_irq_cb)(int state)       = nullptr;
 
-//the DSP Context
-struct _SCSPDSP
-{
-//Config
-	UINT16 *SCSPRAM;
-	UINT32 SCSPRAM_LENGTH;
-	UINT32 RBP;	//Ring buf pointer
-	UINT32 RBL;	//Delay ram (Ring buffer) size in words
+	// Per-slot output-capture buffer (see set_slot_capture_buffer).
+	int16_t *m_slotCapBuf = nullptr;
 
-//context
+	// Master output gain (defaults set in ctor).
+	float m_output_gain[2];
 
-	INT16 COEF[64];		//16 bit signed
-	UINT16 MADRS[32];	//offsets (in words), 16 bit
-	UINT16 MPRO[128*4];	//128 steps 64 bit
-	INT32 TEMP[128];	//TEMP regs,24 bit signed
-	INT32 MEMS[32];	//MEMS regs,24 bit signed
-	UINT32 DEC;
+	int16_t m_RINGBUF[128];
+	uint8_t m_BUFPTR;
+#if SCSP_FM_DELAY
+	int16_t m_DELAYBUF[SCSP_FM_DELAY];
+	uint8_t m_DELAYPTR;
+#endif
 
-//input
-	INT32 MIXS[16];	//MIXS, 24 bit signed
-	INT16 EXTS[2];	//External inputs (CDDA)    16 bit signed
+	uint32_t m_IrqTimA;
+	uint32_t m_IrqTimBC;
+	uint32_t m_IrqMidi;
 
-//output
-	INT16 EFREG[16];	//EFREG, 16 bit signed
+	uint8_t m_MidiOutStack[32];
+	uint8_t m_MidiOutW, m_MidiOutR;
+	uint8_t m_MidiStack[32];
+	uint8_t m_MidiW, m_MidiR;
 
-	int Stopped;
-	int LastStep;
-};
+	int32_t m_EG_TABLE[0x400];
 
-void SCSPDSP_Init(struct _SCSPDSP *DSP);
-void SCSPDSP_SetSample(struct _SCSPDSP *DSP, INT32 sample, INT32 SEL, INT32 MXL);
-void SCSPDSP_Step(struct _SCSPDSP *DSP);
-void SCSPDSP_Start(struct _SCSPDSP *DSP);
+	int m_LPANTABLE[0x10000];
+	int m_RPANTABLE[0x10000];
 
-struct _SCSP
-{
-	union
-	{
-		UINT16 data[0x30/2];
-		UINT8 datab[0x30];
-	} udata;
-	struct _SLOT Slots[32];
-	signed short RINGBUF[64];
-	unsigned char BUFPTR;
-	#if FM_DELAY
-	signed short DELAYBUF[FM_DELAY];
-	unsigned char DELAYPTR;
-	#endif
-	unsigned char *SCSPRAM;
-	UINT32 SCSPRAM_LENGTH;
-	char Master;
-	void (*Int68kCB)(int irq);
+	int m_TimPris[3];
+	int m_TimCnt[3];
 
-	UINT32 IrqTimA;
-	UINT32 IrqTimBC;
-	UINT32 IrqMidi;
-
-	UINT8 MidiOutW,MidiOutR;
-	UINT8 MidiStack[16];
-	UINT8 MidiW,MidiR;
-
-	int LPANTABLE[0x10000];
-	int RPANTABLE[0x10000];
-
-	int TimPris[3];
-	int TimCnt[3];
+	// Sample-countdown timers (replaces emu_timer). -1 = inactive.
+	// When a timer reaches 0 inside render(), the matching *_cb is fired.
+	int m_TimCntdown[3];
 
 	// DMA stuff
-	UINT32 scsp_dmea;
-	UINT16 scsp_drga;
-	UINT16 scsp_dtlg;
+	struct
+	{
+		uint32_t dmea;
+		uint16_t drga;
+		uint16_t dtlg;
+		uint8_t  dgate;
+		uint8_t  ddir;
+	} m_dma;
 
-	int ARTABLE[64], DRTABLE[64];
+	uint16_t m_mcieb;
+	uint16_t m_mcipd;
 
-	struct _SCSPDSP DSP;
+	int m_ARTABLE[64], m_DRTABLE[64];
+
+	int16_t *m_RBUFDST;   //this points to where the sample will be stored in the RingBuf
+
+	//LFO
+	int m_PLFO_TRI[256], m_PLFO_SQR[256], m_PLFO_SAW[256], m_PLFO_NOI[256];
+	int m_ALFO_TRI[256], m_ALFO_SQR[256], m_ALFO_SAW[256], m_ALFO_NOI[256];
+	int m_PSCALES[8][256];
+	int m_ASCALES[8][256];
+
+	// Local PRNG (replaces machine().rand()). Linear-congruential, seeded
+	// in init() — used by the noise generator and the noise LFO table.
+	uint32_t m_rand_state;
+	uint32_t scsp_rand();
+
+	void exec_dma();       /*state DMA transfer function*/
+	uint8_t DecodeSCI(uint8_t irq);
+	void CheckPendingIRQ();
+	void MainCheckPendingIRQ(uint16_t irq_type);
+	void ResetInterrupts();
+	void timerA_cb();
+	void timerB_cb();
+	void timerC_cb();
+	int Get_AR(int base, int R);
+	int Get_DR(int base, int R);
+	void Compute_EG(SCSP_SLOT *slot);
+	int EG_Update(SCSP_SLOT *slot);
+	uint32_t Step(SCSP_SLOT *slot);
+	void Compute_LFO(SCSP_SLOT *slot);
+	void StartSlot(SCSP_SLOT *slot);
+	void StopSlot(SCSP_SLOT *slot, int keyoff);
+	void init_tables();
+	void UpdateSlotReg(int s, int r);
+	void UpdateReg(int reg);
+	void UpdateSlotRegR(int slot, int reg);
+	void UpdateRegR(int reg);
+	void w16(uint32_t addr, uint16_t val);
+	uint16_t r16(uint32_t addr);
+	inline int32_t UpdateSlot(SCSP_SLOT *slot);
+	void DoMasterSamples(int16_t *out, int n_frames);
+
+	// Inline RAM accessors. Saturn sound RAM is physically big-endian, but
+	// aosdk-derived hosts (including Furnace's wrapper, which writes
+	// samples via scsp_write_waveform with LSB at [addr], MSB at [addr+1])
+	// store sample words as host-native little-endian to make pointer-cast
+	// reads cheap on LE platforms. Upstream MAME's
+	// device_rom_interface<...,ENDIANNESS_BIG> reads BE, but for
+	// drop-in compatibility with the existing aosdk-shaped wrapper we
+	// match aosdk's storage convention here:
+	//   - 16-bit reads/writes: low byte at [addr], high byte at [addr+1]
+	//   - 8-bit reads:         (addr ^ 1) — picks the byte that holds the
+	//                          MSB in the LE-stored 16-bit pair, which is
+	//                          where the SCSP's BE-hardware view places
+	//                          the 8-bit PCM sample.
+	// Future Saturn-accurate hosts that store RAM BE can override these.
+	inline uint8_t  ram_read_byte(uint32_t addr) const { return m_RAM[(addr ^ 1) & m_RAMMask]; }
+	inline uint16_t ram_read_word(uint32_t addr) const
+	{
+		uint32_t a = addr & m_RAMMask & ~1u;
+		return uint16_t((uint16_t(m_RAM[a + 1]) << 8) | m_RAM[a]);
+	}
+	inline void ram_write_word(uint32_t addr, uint16_t val)
+	{
+		uint32_t a = addr & m_RAMMask & ~1u;
+		m_RAM[a]     = uint8_t(val & 0xFF);
+		m_RAM[a + 1] = uint8_t(val >> 8);
+	}
+
+	// Schedule timer `idx` to expire after (TimPris[idx] * (255 - tval))
+	// samples; tval is the low byte of the timer register.
+	void schedule_timer(int idx, int tval);
+
+	//LFO
+	void LFO_Init();
+	int32_t PLFO_Step(SCSP_LFO_t *LFO);
+	int32_t ALFO_Step(SCSP_LFO_t *LFO);
+	void LFO_ComputeStep(SCSP_LFO_t *LFO, uint32_t LFOF, uint32_t LFOWS, uint32_t LFOS, int ALFO);
 };
 
-extern struct _SCSP SCSP;
-
-struct SCSPinterface
-{
-	int num;
-	void *region[MAX_SCSP];
-	int mixing_level[MAX_SCSP];			/* volume */
-	void (*irq_callback[MAX_SCSP])(int state);	/* irq callback */
-};
-
-void *scsp_start(const void *config);
-void SCSP_Update(void *param, INT16 **inputs, stereo_sample_t *sample);
-
-#define READ16_HANDLER(name)	data16_t name(offs_t offset, data16_t mem_mask)
-#define WRITE16_HANDLER(name)	void     name(offs_t offset, data16_t data, data16_t mem_mask)
-
-// SCSP register access
-READ16_HANDLER( SCSP_0_r );
-WRITE16_HANDLER( SCSP_0_w );
-READ16_HANDLER( SCSP_1_r );
-WRITE16_HANDLER( SCSP_1_w );
-
-// MIDI I/O access (used for comms on Model 2/3)
-WRITE16_HANDLER( SCSP_MidiIn );
-READ16_HANDLER( SCSP_MidiOutR );
-
-#endif
+#endif // SCSP_MAME_SCSP_H

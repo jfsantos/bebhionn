@@ -36,7 +36,7 @@ var TrackerState = (function () {
             instruments = [{
                 name: 'Init',
                 operators: [{ freq_ratio:1, freq_fixed:0, level:0.8, ar:31, d1r:0, dl:0, d2r:0, rr:14,
-                              mdl:0, mod_source:-1, feedback:0, is_carrier:true, waveform:0,
+                              mdl:0, mod_sources:[], feedback:0, is_carrier:true, waveform:0,
                               loop_mode:1, loop_start:0, loop_end:1024 }]
             }];
         }

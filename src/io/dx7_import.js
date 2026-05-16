@@ -476,54 +476,124 @@ var DX7Import = (function() {
         var carrierSet = {};
         for (var k = 0; k < liveCarriers.length; k++) carrierSet[liveCarriers[k]] = true;
 
+        // SCSP slots have two modulation inputs (MDXSL and MDYSL), so each
+        // op can take up to two distinct external modulators. Algorithms with
+        // three parallel mods on one carrier (alg 16: {5,3,2}→1) still drop
+        // the surplus — those drops are returned in voiceToOperators's
+        // `dropped` list so the UI can surface them.
+        function pickModSources(opNum) {
+            var sources = [];
+            for (var lc = 0; lc < liveConnections.length; lc++) {
+                var conn = liveConnections[lc];
+                if (conn.car === opNum && conn.mod in opToLayer) {
+                    sources.push(opToLayer[conn.mod]);
+                    if (sources.length >= 2) break;
+                }
+            }
+            return sources;
+        }
+
+        // Per-carrier list of dropped modulator op numbers (1-indexed, DX7
+        // op numbering — the same numbering the user reads in a DX7 editor).
+        function droppedModsFor(opNum) {
+            var kept = 0, dropped = [];
+            for (var lc = 0; lc < liveConnections.length; lc++) {
+                var conn = liveConnections[lc];
+                if (conn.car === opNum && conn.mod in opToLayer) {
+                    if (kept < 2) kept++;
+                    else dropped.push(conn.mod);
+                }
+            }
+            return dropped;
+        }
+
+        // Prune orphan ops: the BFS keeps every op reachable from any
+        // carrier via any connection, but pickModSources wires up at most
+        // two modulators per carrier. The "losers" of those tie-breaks
+        // aren't carriers themselves, so they generate sound that goes
+        // nowhere. Drop them iteratively (an op that only modulated a
+        // now-pruned op also becomes a loser) so we don't burn SCSP slots
+        // on silent zombies.
+        var pruning = true;
+        while (pruning) {
+            pruning = false;
+            var useful = {};
+            for (var ck = 0; ck < liveCarriers.length; ck++) useful[liveCarriers[ck]] = true;
+            for (var nn = 0; nn < activeList.length; nn++) {
+                var ms_arr = pickModSources(activeList[nn]);
+                for (var msi = 0; msi < ms_arr.length; msi++) {
+                    useful[activeList[ms_arr[msi]]] = true;
+                }
+            }
+            var newActive = [];
+            for (var pp = 0; pp < activeList.length; pp++) {
+                if (useful[activeList[pp]]) newActive.push(activeList[pp]);
+                else pruning = true;
+            }
+            if (pruning) {
+                activeList = newActive;
+                opToLayer = {};
+                for (var qq = 0; qq < activeList.length; qq++) opToLayer[activeList[qq]] = qq;
+            }
+        }
+
+        // Now collect dropped-modulator info for any op that had >2 incoming
+        // modulators. These are real fidelity losses — the dropped mod's
+        // amplitude/envelope is gone, not just rerouted.
+        var dropped = [];
+        for (var da = 0; da < activeList.length; da++) {
+            var dops = droppedModsFor(activeList[da]);
+            if (dops.length) dropped.push({ carrierOp: activeList[da], droppedOps: dops });
+        }
+
         var fmOps = [];
         for (var a = 0; a < activeList.length; a++) {
             var opNum = activeList[a];
             var dxOp = voice.operators[opNum - 1];
             var isCarrier = !!carrierSet[opNum];
 
-            // SCSP layers reference a single mod_source per op. When multiple
-            // modulators feed one op (algs 7, 10, 16), keep the first
-            // surviving one — the others' contribution is lost.
-            var modSource = -1;
-            for (var lc = 0; lc < liveConnections.length; lc++) {
-                var conn = liveConnections[lc];
-                if (conn.car === opNum && conn.mod in opToLayer) {
-                    modSource = opToLayer[conn.mod];
-                    break;
-                }
-            }
+            var modSources = pickModSources(opNum);
 
             // MDL=11 calibration: β = op.level × π × 2^(mdl-10), and
             // op.level = dx7_amp/2, so mdl=11 cancels the /2 to reproduce
-            // Dexed's β_peak = 2π at a fully open modulator.
+            // Dexed's β_peak = 2π at a fully open modulator. Take the loudest
+            // surviving modulator as the calibration reference when there are
+            // two — they share the MDL register anyway.
             var mdl = 0;
-            if (modSource >= 0) {
-                var modOpNum = activeList[modSource];
-                if (voice.operators[modOpNum - 1].outputLevel > 0) mdl = 11;
+            for (var msj = 0; msj < modSources.length; msj++) {
+                var modOpNum = activeList[modSources[msj]];
+                if (voice.operators[modOpNum - 1].outputLevel > 0) { mdl = 11; break; }
             }
 
             // Self-feedback applies to the DX7-designated op (not always op1).
+            // DX7 feedback is 0..7; SCSP MDL nibble is 0..15. Map ×2 so DX7's
+            // full range spans most of the SCSP register without saturating.
             var feedback = (opNum === alg.fbOp && voice.feedback > 0) ?
-                voice.feedback / 7.0 : 0.0;
+                (voice.feedback * 2) : 0;
 
             var env = _dx7EgToScsp(dxOp.egRates, dxOp.egLevels, dxOp.outputLevel);
             var level = _ampToLevel(env.peakAmp);
 
-            var freqRatio = operatorFreqRatio(dxOp);
-            // DX7 fixed-frequency mode: operatorFreqRatio returns Hz/440,
-            // which bebhionn can't represent directly. Treat as ratio mode
-            // for now — the pitch will drift with key. This matches Python.
-            var freqFixed = 0;
+            // DX7 oscMode 1 = fixed Hz. operatorFreqRatio returns Hz/440 in
+            // that case; multiply back out to get Hz and feed bebhionn's
+            // freq_fixed (engine ignores freq_ratio when freq_fixed > 0).
+            var freqRatio, freqFixed;
+            if (dxOp.oscMode === 1) {
+                freqRatio = 1.0; // sentinel; ignored when freq_fixed > 0
+                freqFixed = operatorFreqRatio(dxOp) * 440.0;
+            } else {
+                freqRatio = operatorFreqRatio(dxOp);
+                freqFixed = 0;
+            }
 
             fmOps.push({
                 freq_ratio: Math.round(freqRatio * 1000) / 1000,
-                freq_fixed: freqFixed,
+                freq_fixed: Math.round(freqFixed * 100) / 100,
                 level: Math.round(level * 1000) / 1000,
                 ar: env.ar, d1r: env.d1r, dl: env.dl, d2r: env.d2r, rr: env.rr,
                 mdl: mdl,
-                mod_source: modSource,
-                feedback: Math.round(feedback * 1000) / 1000,
+                mod_sources: modSources,
+                feedback: feedback,
                 is_carrier: isCarrier,
                 waveform: 0,
                 loop_mode: 1,
@@ -537,7 +607,7 @@ var DX7Import = (function() {
                 disdl: isCarrier ? 5 : 0
             });
         }
-        return fmOps;
+        return { operators: fmOps, dropped: dropped };
     }
 
     /**
@@ -546,11 +616,13 @@ var DX7Import = (function() {
      *
      * @param {ArrayBuffer} arrayBuffer - DX7 .syx file contents
      * @param {number} [maxOps=6] - Operator count cap per voice
-     * @returns {Array<{name: string, operators: Object[]}>}
+     * @returns {{instruments: Array<{name: string, operators: Object[]}>,
+     *           warnings: Array<{voiceName: string, algorithm: number, drops: Array<{carrierOp: number, droppedOps: number[]}>}>}}
      */
     function convertBank(arrayBuffer, maxOps) {
         var voices = parseSysex(arrayBuffer);
         var instruments = [];
+        var warnings = [];
         for (var i = 0; i < voices.length; i++) {
             var v = voices[i];
             var hasAudibleOp = false;
@@ -558,12 +630,14 @@ var DX7Import = (function() {
                 if (v.operators[o].outputLevel > 0) { hasAudibleOp = true; break; }
             }
             if (!hasAudibleOp) continue;
-            instruments.push({
-                name: v.name || ('DX7 ' + i),
-                operators: voiceToOperators(v, maxOps)
-            });
+            var name = v.name || ('DX7 ' + i);
+            var conv = voiceToOperators(v, maxOps);
+            instruments.push({ name: name, operators: conv.operators });
+            if (conv.dropped && conv.dropped.length) {
+                warnings.push({ voiceName: name, algorithm: v.algorithm + 1, drops: conv.dropped });
+            }
         }
-        return instruments;
+        return { instruments: instruments, warnings: warnings };
     }
 
     return {

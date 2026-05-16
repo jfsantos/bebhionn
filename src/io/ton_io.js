@@ -19,8 +19,8 @@
  * @property {number}         d2r         - Decay 2 Rate (0–31)
  * @property {number}         rr          - Release Rate (0–31)
  * @property {number}         mdl         - Modulation Depth Level (0–15)
- * @property {number}         mod_source  - Index of modulator operator, or -1 if none
- * @property {number}         feedback    - Self-feedback amount (0 or ~0.3)
+ * @property {number[]}       mod_sources - Modulator operator indices (0..2 entries; empty for none). Legacy `mod_source: int` is also accepted on read.
+ * @property {number}         feedback    - Self-feedback MDL nibble (0..15)
  * @property {boolean}        is_carrier  - True if output goes to the mix bus
  * @property {number|string}  waveform    - Waveform type index (0–9) or name (e.g. `"sine"`, `"sawtooth"`)
  * @property {number}         loop_mode   - SCSP LPCTL: 0=off, 1=normal, 2=reverse, 3=alternating
@@ -246,8 +246,14 @@ const TonIO = (function () {
         // TL from level
         const tl = Math.max(0, Math.min(255, Math.round((1.0 - (op.level !== undefined ? op.level : 0.8)) * 128)));
 
-        // Modulator layer index
-        const fmLayer = (op.mod_source !== undefined && op.mod_source >= 0) ? op.mod_source : -1;
+        // Modulator layer index. Saturn TON's per-layer FM link encodes at
+        // most one mod source (the driver derives MDXSL=MDYSL from it at
+        // runtime). If the high-level op has two mod_sources, the second is
+        // dropped on export — the on-disk TON format simply can't encode it.
+        let modSources = Array.isArray(op.mod_sources) ?
+          op.mod_sources.filter(s => typeof s === 'number' && s >= 0) :
+          (typeof op.mod_source === 'number' && op.mod_source >= 0 ? [op.mod_source] : []);
+        const fmLayer = modSources.length > 0 ? modSources[0] : -1;
 
         const layer = makeLayer({
           saOffset: wave.offset,
@@ -435,7 +441,7 @@ const TonIO = (function () {
 
         // Detect self-feedback: MDXSL=32 or MDYSL=32
         const hasFeedback = (mdxsl === 32 || mdysl === 32);
-        const feedback = hasFeedback ? 0.3 : 0; // default feedback level
+        const feedback = hasFeedback ? 9 : 0; // raw MDL nibble (0..15); mid-range default
 
         // Extract PCM samples (big-endian int16 → Float32Array)
         const sampleSize = pcm8b ? 1 : 2;
@@ -482,7 +488,7 @@ const TonIO = (function () {
           d2r: d2r,
           rr: rr,
           mdl: mdl,
-          mod_source: modSource,
+          mod_sources: (modSource >= 0) ? [modSource] : [],
           feedback: feedback,
           is_carrier: isCarrier,
           loop_mode: lpctl,
@@ -561,7 +567,7 @@ const TonIO = (function () {
         name: 'Empty',
         operators: [{
           freq_ratio: 1, level: 0, ar: 31, d1r: 0, dl: 0, d2r: 0, rr: 14,
-          mdl: 0, mod_source: -1, feedback: 0, is_carrier: true,
+          mdl: 0, mod_sources: [], feedback: 0, is_carrier: true,
           waveform: 0, loop_mode: 1, loop_start: 0, loop_end: WAVE_LEN,
         }],
       });

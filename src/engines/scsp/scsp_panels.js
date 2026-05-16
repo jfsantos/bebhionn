@@ -355,36 +355,51 @@ var SCSPPanels = (function() {
             var boxes = container.querySelectorAll('.op-box-mini');
             var secRect = document.getElementById('routing-section').getBoundingClientRect();
 
-            inst.operators.forEach(function(op, i) {
-                if (op.mod_source >= 0 && op.mod_source < boxes.length && i < boxes.length) {
-                    var sr = boxes[op.mod_source].getBoundingClientRect();
-                    var dr = boxes[i].getBoundingClientRect();
-                    var x1 = sr.left + sr.width / 2 - secRect.left;
-                    var y1 = sr.top + sr.height / 2 - secRect.top;
-                    var x2 = dr.left + dr.width / 2 - secRect.left;
-                    var y2 = dr.top + dr.height / 2 - secRect.top;
-
-                    var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                    line.setAttribute('x1', x1); line.setAttribute('y1', y1);
-                    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
-                    line.setAttribute('stroke', '#a84'); line.setAttribute('stroke-width', '2');
-                    line.setAttribute('stroke-dasharray', '4,3');
-                    svg.appendChild(line);
-
-                    var angle = Math.atan2(y2 - y1, x2 - x1);
-                    var headLen = 8;
-                    var cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
-                    var poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-                    var p1x = cx + headLen * Math.cos(angle);
-                    var p1y = cy + headLen * Math.sin(angle);
-                    var p2x = cx - headLen * Math.cos(angle - 0.5);
-                    var p2y = cy - headLen * Math.sin(angle - 0.5);
-                    var p3x = cx - headLen * Math.cos(angle + 0.5);
-                    var p3y = cy - headLen * Math.sin(angle + 0.5);
-                    poly.setAttribute('points', p1x + ',' + p1y + ' ' + p2x + ',' + p2y + ' ' + p3x + ',' + p3y);
-                    poly.setAttribute('fill', '#a84');
-                    svg.appendChild(poly);
+            // Local copy of the engine's mod-source normalizer (panels run in
+            // a separate module scope, so we can't reach getModSources).
+            function _modSourcesOf(op) {
+                if (Array.isArray(op.mod_sources)) {
+                    return op.mod_sources.filter(function(s) { return typeof s === 'number' && s >= 0; }).slice(0, 2);
                 }
+                if (typeof op.mod_source === 'number' && op.mod_source >= 0) return [op.mod_source];
+                return [];
+            }
+
+            function _drawArrow(srcIdx, dstIdx) {
+                if (srcIdx >= boxes.length || dstIdx >= boxes.length) return;
+                var sr = boxes[srcIdx].getBoundingClientRect();
+                var dr = boxes[dstIdx].getBoundingClientRect();
+                var x1 = sr.left + sr.width / 2 - secRect.left;
+                var y1 = sr.top + sr.height / 2 - secRect.top;
+                var x2 = dr.left + dr.width / 2 - secRect.left;
+                var y2 = dr.top + dr.height / 2 - secRect.top;
+
+                var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+                line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+                line.setAttribute('stroke', '#a84'); line.setAttribute('stroke-width', '2');
+                line.setAttribute('stroke-dasharray', '4,3');
+                svg.appendChild(line);
+
+                var angle = Math.atan2(y2 - y1, x2 - x1);
+                var headLen = 8;
+                var cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+                var poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                var p1x = cx + headLen * Math.cos(angle);
+                var p1y = cy + headLen * Math.sin(angle);
+                var p2x = cx - headLen * Math.cos(angle - 0.5);
+                var p2y = cy - headLen * Math.sin(angle - 0.5);
+                var p3x = cx - headLen * Math.cos(angle + 0.5);
+                var p3y = cy - headLen * Math.sin(angle + 0.5);
+                poly.setAttribute('points', p1x + ',' + p1y + ' ' + p2x + ',' + p2y + ' ' + p3x + ',' + p3y);
+                poly.setAttribute('fill', '#a84');
+                svg.appendChild(poly);
+            }
+
+            inst.operators.forEach(function(op, i) {
+                if (i >= boxes.length) return;
+                var srcs = _modSourcesOf(op);
+                for (var s = 0; s < srcs.length; s++) _drawArrow(srcs[s], i);
 
                 if (op.feedback > 0 && i < boxes.length) {
                     var br = boxes[i].getBoundingClientRect();

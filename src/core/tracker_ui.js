@@ -603,7 +603,7 @@ var TrackerUI = (function() {
     function addInstrument() {
         var inst = { name: 'New ' + state.instruments.length,
             operators: [{ freq_ratio:1.0, freq_fixed:0, level:0.8, ar:31, d1r:0, dl:0, d2r:0, rr:14,
-                          mdl:0, mod_source:-1, feedback:0, is_carrier:true, waveform:0,
+                          mdl:0, mod_sources:[], feedback:0, is_carrier:true, waveform:0,
                           loop_mode:1, loop_start:0, loop_end:1024 }] };
         selectedInst = TrackerState.addInstrument(state, inst);
         renderInstList(); renderChannelHeaders();
@@ -813,11 +813,67 @@ var TrackerUI = (function() {
                     }
                     showStatus(result.message);
                     renderAll();
+                    if (result.warnings && result.warnings.length) {
+                        showDx7DropWarnings(result.warnings, file.name);
+                    }
                 } catch (err) { showStatus('DX7 error: ' + err.message); }
             };
             reader.readAsArrayBuffer(file);
         };
         input.click();
+    }
+
+    /** @description Modal dialog listing DX7 voices that had modulators dropped on import.
+     * The SCSP has 2 modulation inputs per slot (MDXSL/MDYSL); DX7 algorithms with 3+ parallel
+     * modulators on one carrier lose the surplus.
+     * @param {Array<{voiceName:string, algorithm:number, drops:Array<{carrierOp:number, droppedOps:number[]}>}>} warnings
+     * @param {string} fileName - Source file name for the dialog title */
+    function showDx7DropWarnings(warnings, fileName) {
+        var overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;z-index:2000;background:#0008;display:flex;align-items:center;justify-content:center;';
+        var box = document.createElement('div');
+        box.style.cssText = 'background:#12122aee;border:1px solid #00d4ff44;border-radius:6px;min-width:480px;max-width:680px;max-height:80vh;box-shadow:0 4px 20px #000a;backdrop-filter:blur(4px);font-size:11px;display:flex;flex-direction:column;';
+        var header = document.createElement('div');
+        header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:5px 10px;background:#1a1a3a;border-radius:6px 6px 0 0;border-bottom:1px solid #333;';
+        var title = document.createElement('span');
+        title.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:11px;';
+        title.textContent = 'DX7 import — modulators dropped';
+        var closeBtn = document.createElement('button');
+        closeBtn.textContent = '×';
+        closeBtn.style.cssText = 'background:none;border:none;color:#666;cursor:pointer;font-size:14px;font-family:inherit;padding:0 4px;';
+        closeBtn.onmouseover = function() { closeBtn.style.color = '#f66'; };
+        closeBtn.onmouseout = function() { closeBtn.style.color = '#666'; };
+        header.appendChild(title); header.appendChild(closeBtn);
+        var body = document.createElement('div');
+        body.style.cssText = 'padding:12px 14px;color:#ccc;line-height:1.5;overflow-y:auto;';
+        var intro = document.createElement('div');
+        intro.style.marginBottom = '10px';
+        intro.innerHTML = warnings.length + ' voice' + (warnings.length === 1 ? '' : 's') + ' in <b>' + fileName +
+            '</b> had modulators dropped. The SCSP has two modulation inputs per slot ' +
+            '(MDXSL / MDYSL); DX7 algorithms that route three or more parallel modulators ' +
+            'into one carrier (e.g. alg 16) lose the surplus on import. The carrier still ' +
+            'sounds, but the dropped operators contribute nothing.';
+        body.appendChild(intro);
+        var list = document.createElement('div');
+        list.style.cssText = 'font-family:monospace;font-size:10px;background:#0a0a1a;border:1px solid #222;border-radius:3px;padding:8px;';
+        for (var w = 0; w < warnings.length; w++) {
+            var entry = warnings[w];
+            var line = document.createElement('div');
+            line.style.marginBottom = '2px';
+            var dropsTxt = entry.drops.map(function(d) {
+                return 'Op ' + d.carrierOp + ' ← dropped Op' +
+                    (d.droppedOps.length > 1 ? 's ' : ' ') + d.droppedOps.join(', ');
+            }).join('; ');
+            line.textContent = entry.voiceName + ' (alg ' + entry.algorithm + ') — ' + dropsTxt;
+            list.appendChild(line);
+        }
+        body.appendChild(list);
+        box.appendChild(header); box.appendChild(body);
+        overlay.appendChild(box);
+        function dismiss() { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }
+        closeBtn.onclick = dismiss;
+        overlay.onclick = function(e) { if (e.target === overlay) dismiss(); };
+        document.body.appendChild(overlay);
     }
 
     /** @description Open file dialog to import a TON bank file via engine.importBank (replaces all instruments). */
@@ -1008,6 +1064,18 @@ var TrackerUI = (function() {
                     state.stepsPerBeat = project.stepsPerBeat || 4;
                     state.patternLength = project.patternLength || 32;
                     state.instruments = project.instruments;
+                    // Legacy schema: op.mod_source (int, -1 = none) → op.mod_sources ([]).
+                    // Done on load so subsequent saves don't keep the old field around.
+                    for (var ii = 0; ii < state.instruments.length; ii++) {
+                        var ops = state.instruments[ii].operators || [];
+                        for (var oi = 0; oi < ops.length; oi++) {
+                            var o = ops[oi];
+                            if (!Array.isArray(o.mod_sources)) {
+                                o.mod_sources = (typeof o.mod_source === 'number' && o.mod_source >= 0) ? [o.mod_source] : [];
+                            }
+                            delete o.mod_source;
+                        }
+                    }
                     state.patterns = project.patterns;
                     // Older projects may have fewer channels than NUM_CHANNELS — pad.
                     for (var pi = 0; pi < state.patterns.length; pi++) {

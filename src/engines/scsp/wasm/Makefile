@@ -1,8 +1,11 @@
-# SCSP WASM build — compiles aosdk's SCSP emulator to WebAssembly
-CC = emcc
-CFLAGS = -O2 \
-	-include scsp_types.h \
-	-D__AO_H -DCPUINTRF_H -D_SAT_HW_H_ -DOSD_CPU_H \
+# SCSP WASM build — compiles MAME's BSD-3-Clause SCSP emulator
+# (extracted into scsp.cpp / scspdsp.cpp) plus the Bebhionn C bridge
+# (scsp_wasm.cpp) and waveform helpers (scsp_waveforms.c) to WebAssembly.
+CC  = emcc
+CXX = emcc
+
+# Shared flags
+COMMON = -O2 \
 	-s WASM=1 \
 	-s MODULARIZE=1 \
 	-s EXPORT_NAME='SCSPModule' \
@@ -11,19 +14,31 @@ CFLAGS = -O2 \
 	-s ALLOW_MEMORY_GROWTH=0 \
 	-s INITIAL_MEMORY=4194304 \
 	-s STACK_SIZE=65536 \
-	--no-entry \
-	-Wno-incompatible-pointer-types \
-	-Wno-implicit-function-declaration \
-	-Wno-int-conversion
+	--no-entry
 
-SRCS = scsp_wasm.c scsp.c scspdsp.c
+CFLAGS   = $(COMMON)
+CXXFLAGS = $(COMMON) -std=c++17
+
+OBJS = scsp_wasm.o scsp.o scspdsp.o scsp_waveforms.o
 
 all: scsp.js
 
-scsp.js: $(SRCS) scsp.h scsplfo.c scsp_types.h
-	$(CC) $(CFLAGS) -o scsp.js $(SRCS)
+scsp.js: $(OBJS)
+	$(CXX) $(COMMON) -o scsp.js $(OBJS)
+
+scsp_wasm.o: scsp_wasm.cpp scsp.h scspdsp.h
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+scsp.o: scsp.cpp scsp.h scspdsp.h
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+scspdsp.o: scspdsp.cpp scspdsp.h
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+scsp_waveforms.o: scsp_waveforms.c scsp_waveforms.h
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f scsp.js scsp.wasm
+	rm -f scsp.js scsp.wasm $(OBJS)
 
 .PHONY: all clean

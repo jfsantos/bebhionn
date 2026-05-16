@@ -53,44 +53,44 @@ var SCSPEngine = (function() {
     var PRESET_INSTRUMENTS = [
         // 1. FM Kick — fast-decaying modulator simulates pitch sweep; high MDL for transient click
         { name: 'FM Kick', operators: [
-            { freq_ratio:1.0, freq_fixed:0, level:0.95, ar:31, d1r:24, dl:22, d2r:0, rr:26, mdl:0, mod_source:-1, feedback:0.15, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.0, freq_fixed:0, level:0.95, ar:31, d1r:12, dl:8, d2r:4, rr:22, mdl:13, mod_source:0, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0, freq_fixed:0, level:0.95, ar:31, d1r:24, dl:22, d2r:0, rr:26, mdl:0, mod_sources:[], feedback:5, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0, freq_fixed:0, level:0.95, ar:31, d1r:12, dl:8, d2r:4, rr:22, mdl:13, mod_sources:[0], feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
-        // 2. Noise Snare — high feedback (0.45) + inharmonic ratio → noise-like texture
+        // 2. Noise Snare — high feedback + inharmonic ratio → noise-like texture
         { name: 'Noise Snare', operators: [
-            { freq_ratio:3.53, freq_fixed:0, level:0.85, ar:31, d1r:16, dl:12, d2r:6, rr:20, mdl:0, mod_source:-1, feedback:0.45, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.0,  freq_fixed:0, level:0.9,  ar:31, d1r:14, dl:10, d2r:4, rr:20, mdl:12, mod_source:0, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:3.53, freq_fixed:0, level:0.85, ar:31, d1r:16, dl:12, d2r:6, rr:20, mdl:0, mod_sources:[], feedback:13, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0,  freq_fixed:0, level:0.9,  ar:31, d1r:14, dl:10, d2r:4, rr:20, mdl:12, mod_sources:[0], feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
         // 3. Metal Hat — inharmonic ratios (5.19, 1.414) for metallic character; short decay
         { name: 'Metal Hat', operators: [
-            { freq_ratio:5.19,  freq_fixed:0, level:0.9, ar:31, d1r:18, dl:14, d2r:8, rr:22, mdl:0,  mod_source:-1, feedback:0.2, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.414, freq_fixed:0, level:0.7, ar:31, d1r:20, dl:18, d2r:10, rr:24, mdl:11, mod_source:0, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:5.19,  freq_fixed:0, level:0.9, ar:31, d1r:18, dl:14, d2r:8, rr:22, mdl:0,  mod_sources:[], feedback:6, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.414, freq_fixed:0, level:0.7, ar:31, d1r:20, dl:18, d2r:10, rr:24, mdl:11, mod_sources:[0], feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
-        // 4. Acid Bass — self-feedback modulator (0.35) creates saw-like harmonics; high MDL for grit
+        // 4. Acid Bass — self-feedback modulator creates saw-like harmonics; high MDL for grit
         { name: 'Acid Bass', operators: [
-            { freq_ratio:1.0, freq_fixed:0, level:0.9, ar:31, d1r:8,  dl:4, d2r:0, rr:16, mdl:0,  mod_source:-1, feedback:0.35, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.0, freq_fixed:0, level:0.9, ar:31, d1r:10, dl:6, d2r:2, rr:16, mdl:11, mod_source:0,  feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0, freq_fixed:0, level:0.9, ar:31, d1r:8,  dl:4, d2r:0, rr:16, mdl:0,  mod_sources:[], feedback:10, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0, freq_fixed:0, level:0.9, ar:31, d1r:10, dl:6, d2r:2, rr:16, mdl:11, mod_sources:[0],  feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
         // 5. Harsh Lead — 3-op stacked chain (mod→mod→carrier); square-wave modulator for extra edge
         { name: 'Harsh Lead', operators: [
-            { freq_ratio:3.0, freq_fixed:0, level:0.7,  ar:31, d1r:4, dl:2, d2r:0, rr:14, mdl:0,  mod_source:-1, feedback:0.25, is_carrier:false, waveform:2, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.0, freq_fixed:0, level:0.85, ar:31, d1r:2, dl:0, d2r:0, rr:14, mdl:10, mod_source:0,  feedback:0, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.0, freq_fixed:0, level:0.85, ar:31, d1r:2, dl:0, d2r:0, rr:14, mdl:11, mod_source:1,  feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:3.0, freq_fixed:0, level:0.7,  ar:31, d1r:4, dl:2, d2r:0, rr:14, mdl:0,  mod_sources:[], feedback:7, is_carrier:false, waveform:2, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0, freq_fixed:0, level:0.85, ar:31, d1r:2, dl:0, d2r:0, rr:14, mdl:10, mod_sources:[0],  feedback:0, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0, freq_fixed:0, level:0.85, ar:31, d1r:2, dl:0, d2r:0, rr:14, mdl:11, mod_sources:[1],  feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
         // 6. Dark Pad — slow attack, slight detune (1.003) for chorus warmth; strings waveform carrier
         { name: 'Dark Pad', operators: [
-            { freq_ratio:1.003, freq_fixed:0, level:0.5, ar:16, d1r:0, dl:0, d2r:0, rr:12, mdl:0, mod_source:-1, feedback:0.15, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.0,   freq_fixed:0, level:0.7, ar:16, d1r:0, dl:0, d2r:0, rr:12, mdl:7, mod_source:0,  feedback:0, is_carrier:true, waveform:6, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.003, freq_fixed:0, level:0.5, ar:16, d1r:0, dl:0, d2r:0, rr:12, mdl:0, mod_sources:[], feedback:5, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0,   freq_fixed:0, level:0.7, ar:16, d1r:0, dl:0, d2r:0, rr:12, mdl:7, mod_sources:[0],  feedback:0, is_carrier:true, waveform:6, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
         // 7. Seq Pluck — fast-decaying modulator for percussive brightness; short body
         { name: 'Seq Pluck', operators: [
-            { freq_ratio:2.0, freq_fixed:0, level:0.85, ar:31, d1r:18, dl:14, d2r:6, rr:20, mdl:0,  mod_source:-1, feedback:0.2, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.0, freq_fixed:0, level:0.8,  ar:31, d1r:14, dl:10, d2r:4, rr:18, mdl:10, mod_source:0,  feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:2.0, freq_fixed:0, level:0.85, ar:31, d1r:18, dl:14, d2r:6, rr:20, mdl:0,  mod_sources:[], feedback:6, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0, freq_fixed:0, level:0.8,  ar:31, d1r:14, dl:10, d2r:4, rr:18, mdl:10, mod_sources:[0],  feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
-        // 8. Industrial Hit — max feedback (0.5) = white noise source; inharmonic carrier + square wave for metallic body
+        // 8. Industrial Hit — max feedback = white noise source; inharmonic carrier + square wave for metallic body
         { name: 'Industrial Hit', operators: [
-            { freq_ratio:1.0,  freq_fixed:0, level:0.9,  ar:31, d1r:14, dl:10, d2r:6, rr:18, mdl:0,  mod_source:-1, feedback:0.5, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
-            { freq_ratio:1.73, freq_fixed:0, level:0.85, ar:31, d1r:12, dl:8,  d2r:4, rr:18, mdl:13, mod_source:0,  feedback:0, is_carrier:true, waveform:2, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0,  freq_fixed:0, level:0.9,  ar:31, d1r:14, dl:10, d2r:6, rr:18, mdl:0,  mod_sources:[], feedback:15, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.73, freq_fixed:0, level:0.85, ar:31, d1r:12, dl:8,  d2r:4, rr:18, mdl:13, mod_sources:[0],  feedback:0, is_carrier:true, waveform:2, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
     ];
 
@@ -260,68 +260,102 @@ var SCSPEngine = (function() {
         return ((octave & 0xF) << 11) | (fns & 0x3FF);
     }
 
-    /** Convert a packed TL byte to its linear gain (matches scsp.c / scsp_voice.c). */
-    function tlToLinear(tl) {
-        var db = 0;
-        if (tl & 1)   db -= 0.4;
-        if (tl & 2)   db -= 0.8;
-        if (tl & 4)   db -= 1.5;
-        if (tl & 8)   db -= 3;
-        if (tl & 16)  db -= 6;
-        if (tl & 32)  db -= 12;
-        if (tl & 64)  db -= 24;
-        if (tl & 128) db -= 48;
-        return Math.pow(10, db / 20);
-    }
-
-    /** Derive a feedback-path MDL nibble from a target beta and the carrier TL.
-     *  Mirrors scsp_voice.c:compute_mdl, including the max_safe clamp that
-     *  prevents runaway feedback when the modulator is near full scale. */
-    function computeFeedbackMdl(tl, feedback) {
-        var tlLin = tlToLinear(tl);
-        var ringPeak = 32767 * 4 * tlLin / 2;
-        if (ringPeak < 1) return 0;
-        var targetBeta = feedback * Math.PI;
-        var needed = targetBeta * 1024 / (ringPeak * 2 * Math.PI);
-        var mdl = Math.max(0, Math.min(15, Math.round(16 + Math.log2(Math.max(needed, 1e-10)))));
-        var maxSafe = 1024 / (ringPeak * 2);
-        var maxMdl = Math.floor(15 + Math.log2(Math.max(maxSafe, 1e-10)));
-        if (mdl > maxMdl) mdl = maxMdl;
-        return mdl;
-    }
-
-    /** Compute d7 (MDL|MDXSL|MDYSL) from a high-level op, resolving mod_source
-     *  to an absolute slot via slotBase. Used by programSlot. */
-    function computeD7FromOp(op, slot, slotBase, tl) {
-        var mdl = 0, mdxsl = 0, mdysl = 0;
-        if (op.mod_source >= 0 && op.mdl > 0) {
-            mdl = Math.round(op.mdl) & 0xF;
-            var modSlot = slotBase + op.mod_source;
-            var dist = (modSlot - slot) & 63;
-            mdxsl = dist; mdysl = dist;
+    /** Normalize an operator's modulation-source list. Accepts either the
+     *  new mod_sources: int[] field or the legacy mod_source: int (-1 = none)
+     *  for backward compatibility with older saved projects. Returns a clean
+     *  array of 0..2 op indices (capped because the SCSP only has X and Y
+     *  modulation inputs).
+     */
+    function getModSources(op) {
+        var arr = [];
+        if (Array.isArray(op.mod_sources)) {
+            for (var i = 0; i < op.mod_sources.length; i++) {
+                var s = op.mod_sources[i];
+                if (typeof s === 'number' && s >= 0) arr.push(s);
+            }
+        } else if (typeof op.mod_source === 'number' && op.mod_source >= 0) {
+            arr.push(op.mod_source);
         }
-        if (op.feedback > 0) {
-            var fbDist = (-32) & 63;
-            var fbMdl = computeFeedbackMdl(tl, op.feedback);
-            if (mdl > 0) { mdysl = fbDist; mdl = Math.max(mdl, fbMdl); }
-            else { mdl = fbMdl; mdxsl = fbDist; mdysl = fbDist; }
+        return arr.slice(0, 2);
+    }
+
+    /** Compute d7 (MDL|MDXSL|MDYSL) from a high-level op, resolving each
+     *  mod source in op.mod_sources to an absolute slot via slotBase.
+     *  Used by programSlot.
+     *
+     *  Sound-stack indexing (Sega SCSP doc 4.2/4.3): the chip reads two 6-bit
+     *  ring offsets into a 64-entry sound stack updated 32×/Fs. MDXSL and
+     *  MDYSL are independent — slots can have up to two distinct external
+     *  modulators (the doc's slot-2-modulated-by-{0,1} example). For an
+     *  external mod at slot M reading from carrier at slot C, the modulator's
+     *  previous-Fs write sits at (M-C)&63 — the standard 1-Fs-latency FM
+     *  convention. Ring offset 0x20 is "1 Fs ago" (the doc's "latest") and
+     *  0x00 is "2 Fs ago" ("past") for the slot's own output.
+     *
+     *  Wiring rules (from p04_fm1/2/3):
+     *   - 1 external mod: MDXSL = MDYSL = (M-C)&63. Doc: "If you set it to
+     *     input only on one side, unexpected data may be mixed in or the
+     *     FM modulation degree may seem small."
+     *   - 2 external mods: MDXSL = distA, MDYSL = distB, both at the
+     *     latest sample. Doc: "Basically, when entering slots with different
+     *     numbers, enter samples of the same generation."
+     *   - Pure self-feedback: MDXSL = 0x20 (latest), MDYSL = 0x00 (past).
+     *     Doc: feeding the same self-output to both inputs can oscillate.
+     *   - 1 external mod + self-feedback: X = mod's latest, Y = self past.
+     *   - 2 external mods + self-feedback: doesn't fit in the chip's two
+     *     inputs. Self-FB wins on Y, mod #2 is dropped.
+     */
+    function computeD7FromOp(op, slot, slotBase) {
+        var SELF_LATEST = 0x20;
+        var SELF_PAST   = 0x00;
+        var mdl = 0, mdxsl = 0, mdysl = 0;
+        var sources = getModSources(op);
+        var hasMod = (sources.length > 0 && op.mdl > 0);
+        var fbMdl = Math.round(op.feedback || 0) & 0xF;
+        if (hasMod) {
+            mdl = Math.round(op.mdl) & 0xF;
+            var dist1 = (slotBase + sources[0] - slot) & 63;
+            mdxsl = dist1;
+            if (sources.length >= 2 && !(fbMdl > 0)) {
+                mdysl = (slotBase + sources[1] - slot) & 63;
+            } else {
+                mdysl = dist1;
+            }
+        }
+        if (fbMdl > 0) {
+            if (hasMod) {
+                mdysl = SELF_PAST;
+                if (fbMdl > mdl) mdl = fbMdl;
+            } else {
+                mdl = fbMdl;
+                mdxsl = SELF_LATEST;
+                mdysl = SELF_PAST;
+            }
         }
         return ((mdl & 0xF) << 12) | ((mdxsl & 0x3F) << 6) | (mdysl & 0x3F);
     }
 
     /** Remap d7's MDXSL/MDYSL fields from a TON-imported raw d7 to reflect
-     *  the current slot allocation; preserves MDL as-is. Used by programSlotRaw. */
-    function remapD7Raw(rawD7, modSource, slot, slotBase) {
+     *  the current slot allocation; preserves MDL as-is. Used by
+     *  programSlotRaw. Mirrors computeD7FromOp's wiring rules for 0/1/2
+     *  external modulators and the self-FB fallback. */
+    function remapD7Raw(rawD7, modSources, slot, slotBase) {
         var mdl = (rawD7 >> 12) & 0xF;
         if (mdl === 0) return rawD7 & 0xF000;
-        if (modSource >= 0) {
-            var modSlot = slotBase + modSource;
-            var dist = (modSlot - slot) & 63;
-            return (mdl << 12) | ((dist & 0x3F) << 6) | (dist & 0x3F);
+        var sources = Array.isArray(modSources) ?
+            modSources.filter(function(s) { return typeof s === 'number' && s >= 0; }) :
+            (typeof modSources === 'number' && modSources >= 0 ? [modSources] : []);
+        sources = sources.slice(0, 2);
+        if (sources.length >= 2) {
+            var distA = (slotBase + sources[0] - slot) & 63;
+            var distB = (slotBase + sources[1] - slot) & 63;
+            return (mdl << 12) | (distA << 6) | distB;
         }
-        // Feedback path (no explicit modSource): keep -32 offset for self-mod.
-        var fbDist = (-32) & 63;
-        return (mdl << 12) | ((fbDist & 0x3F) << 6) | (fbDist & 0x3F);
+        if (sources.length === 1) {
+            var dist = (slotBase + sources[0] - slot) & 63;
+            return (mdl << 12) | (dist << 6) | dist;
+        }
+        return (mdl << 12) | (0x20 << 6) | 0x00; // self-FB
     }
 
     /** Write a pre-computed register bundle to a SCSP slot. This is the single
@@ -367,7 +401,7 @@ var SCSPEngine = (function() {
         var lpctl = op.loop_mode >= 0 ? op.loop_mode : wav.loopMode;
         var sa = wav.offset;
 
-        var usesFM = (op.mod_source >= 0 && op.mdl >= 5) || op.feedback > 0;
+        var usesFM = (getModSources(op).length > 0 && op.mdl >= 5) || op.feedback > 0;
         var isMod = !op.is_carrier;
         if (usesFM || isMod) {
             if (wav.length !== WAVE_LEN) {
@@ -381,17 +415,25 @@ var SCSPEngine = (function() {
         var wavBaseFreq = SAMPLE_RATE / wavLen;
         var wavBaseNote = wavBaseNoteFor(wavLen);
 
-        // Resolve the operator's effective base note (at which midiNote plays unshifted).
-        // For freq_ratio, this is wavBaseNote shifted down by the ratio in semitones so
-        // that midiNote=69 with ratio=1 plays at A4. For freq_fixed, the base note is
-        // wherever that fixed frequency maps onto the MIDI scale.
-        var opBaseNote;
+        // Pitch (OCT/FNS): two cases.
+        //  - freq_ratio mode: opBaseNote = wavBaseNote shifted down by the ratio
+        //    in semitones, so midiNote=69 with ratio=1 plays at A4. OCT/FNS is
+        //    derived from (midiNote - opBaseNote) so the tracker note controls
+        //    pitch as usual.
+        //  - freq_fixed mode: the operator's audible frequency must stay at
+        //    op.freq_fixed Hz regardless of the tracker note. Map freq_fixed
+        //    onto the MIDI scale and use *that* as the effective note relative
+        //    to wavBaseNote — the tracker midiNote drops out of the math.
+        //    (Per SCSP doc §4.2.5: OCT/FNS is a multiplier of the sample's
+        //    native rate.)
+        var octBits;
         if (op.freq_fixed > 0) {
-            opBaseNote = wavBaseNote + 12 * Math.log2(op.freq_fixed / wavBaseFreq);
+            var fixedNote = wavBaseNote + 12 * Math.log2(op.freq_fixed / wavBaseFreq);
+            octBits = computeOctFnsBits(fixedNote, wavBaseNote);
         } else {
-            opBaseNote = wavBaseNote - 12 * Math.log2(op.freq_ratio || 1);
+            var opBaseNote = wavBaseNote - 12 * Math.log2(op.freq_ratio || 1);
+            octBits = computeOctFnsBits(midiNote, opBaseNote);
         }
-        var octBits = computeOctFnsBits(midiNote, opBaseNote);
 
         // TL: match TON persistence (ton_io.js exportTon/importTon) and syncRawRegs.
         // Linear-in-level formula is kept here for consistency with the on-disk
@@ -406,7 +448,7 @@ var SCSPEngine = (function() {
         // the hardware actually produces, and the DX7 converter's rate→time
         // mapping is wrong for any note other than ~A3. Matches scsp_voice.c.
         var d5 = (0xF << 10) | ((op.dl & 0x1F) << 5) | (op.rr & 0x1F);
-        var d7 = computeD7FromOp(op, slot, slotBase, tl);
+        var d7 = computeD7FromOp(op, slot, slotBase);
 
         // DISDL: per-op override wins (used by the DX7 importer to avoid
         // multi-carrier saturation — scsp.c's per-slot mixer applies a 4×
@@ -430,12 +472,17 @@ var SCSPEngine = (function() {
      * pitch (octave + FNS) and FM ring buffer offsets (to account for the current
      * slot allocation); all other register values pass through from the imported TON.
      *
-     * NOTE: pitch is computed as `semi = midiNote - rawRegs.baseNote` which assumes
-     * the TON format's baseNote convention (A4 → baseNote=69 when the sample's
-     * natural period matches 440 Hz, i.e. a 100-sample wave). For 1024-sample
-     * waves this is off by ~40 semitones — see project_bebhionn_basenote_bug.md.
-     * Preserving the existing behavior in this refactor to avoid silently shifting
-     * pitches on existing patches.
+     * The TON format's baseNote convention anchors freq_ratio=1.0 to MIDI 69
+     * (saturn_kit's 100-sample-wave assumption). For our actual 1024-sample
+     * waveforms the natural base note is `wavBaseNoteFor(wavLen)` ≈ 28.75, so
+     * we shift by `(wavBaseNote - 69)` before computing OCT/FNS. Without this
+     * shift TON-imported patches play ~40 semitones lower than the same patch
+     * via programSlot, which radically changes the FM character (the modulator
+     * runs at sub-audio rate and degrades into LFO-style wobble).
+     *
+     * dipan is also forced to 16 (center) to match programSlot — both
+     * saturn_kit and ton_io.js export with DIPAN=0 (hard right), so without
+     * this override every TON-loaded voice pans to one side.
      *
      * @param {number} slot - SCSP slot index (0-31)
      * @param {Object} rawRegs - Raw register values (d0, d4, d5, d7, tl, dB, baseNote, lsa, lea, sa)
@@ -444,11 +491,21 @@ var SCSPEngine = (function() {
      * @param {number} slotBase - First slot index of this voice (for relative mod_source calculation)
      * @param {number} opIndex - Operator index within the instrument (currently unused but kept for future per-op routing)
      * @param {number} wavLen - Waveform length in samples (for clamping loop points)
-     * @param {number} modSource - Modulation source operator index, or -1 for none/feedback
+     * @param {number[]} modSources - Modulation source operator indices (0..2 entries; empty for none/feedback)
+     * @param {number} freqFixed - If > 0, play at this absolute Hz instead of letting midiNote drive pitch (matches programSlot's freq_fixed path)
      */
-    function programSlotRaw(slot, rawRegs, midiNote, sa, slotBase, opIndex, wavLen, modSource) {
-        var octBits = computeOctFnsBits(midiNote, rawRegs.baseNote);
-        var d7 = remapD7Raw(rawRegs.d7, modSource, slot, slotBase);
+    function programSlotRaw(slot, rawRegs, midiNote, sa, slotBase, opIndex, wavLen, modSources, freqFixed) {
+        var octBits;
+        if (freqFixed > 0) {
+            var wavBaseFreq = SAMPLE_RATE / wavLen;
+            var wavBaseNote = wavBaseNoteFor(wavLen);
+            var fixedNote = wavBaseNote + 12 * Math.log2(freqFixed / wavBaseFreq);
+            octBits = computeOctFnsBits(fixedNote, wavBaseNote);
+        } else {
+            var opBaseNote = rawRegs.baseNote + (wavBaseNoteFor(wavLen) - 69);
+            octBits = computeOctFnsBits(midiNote, opBaseNote);
+        }
+        var d7 = remapD7Raw(rawRegs.d7, modSources, slot, slotBase);
         var lpctl = (rawRegs.d0 >> 5) & 3;
 
         writeSlotRegisters(slot, {
@@ -462,7 +519,7 @@ var SCSPEngine = (function() {
             d7: d7,
             octBits: octBits,
             disdl: (rawRegs.dB >> 13) & 7,
-            dipan: (rawRegs.dB >> 8) & 0x1F,
+            dipan: 16,
         });
     }
 
@@ -520,10 +577,10 @@ var SCSPEngine = (function() {
             if (op.rawRegs) {
                 if (op.useTonSA) {
                     var origSA = ((op.rawRegs.d0 & 0x0F) << 16) | op.rawRegs.sa;
-                    programSlotRaw(slots[i], op.rawRegs, midiNote, origSA, slotBase, i, op.rawRegs.lea, op.mod_source);
+                    programSlotRaw(slots[i], op.rawRegs, midiNote, origSA, slotBase, i, op.rawRegs.lea, getModSources(op), op.freq_fixed || 0);
                 } else {
                     var wav = waveStore.waves[op.waveform || 0] || waveStore.waves[0];
-                    programSlotRaw(slots[i], op.rawRegs, midiNote, wav.offset, slotBase, i, wav.length, op.mod_source);
+                    programSlotRaw(slots[i], op.rawRegs, midiNote, wav.offset, slotBase, i, wav.length, getModSources(op), op.freq_fixed || 0);
                 }
             } else {
                 programSlot(slots[i], op, midiNote, slotBase);
@@ -584,7 +641,9 @@ var SCSPEngine = (function() {
                             level: o.level !== undefined ? o.level : 0.8,
                             ar: o.ar !== undefined ? o.ar : 31, d1r: o.d1r || 0, dl: o.dl || 0,
                             d2r: o.d2r || 0, rr: o.rr !== undefined ? o.rr : 14,
-                            mdl: o.mdl || 0, mod_source: o.mod_source !== undefined ? o.mod_source : -1,
+                            mdl: o.mdl || 0,
+                            mod_sources: Array.isArray(o.mod_sources) ? o.mod_sources.slice() :
+                                (typeof o.mod_source === 'number' && o.mod_source >= 0 ? [o.mod_source] : []),
                             feedback: o.feedback || 0, is_carrier: o.is_carrier !== undefined ? o.is_carrier : true,
                             waveform: 0, loop_mode: o.loop_mode !== undefined ? o.loop_mode : 1,
                             loop_start: o.loop_start || 0, loop_end: o.loop_end || 1024,
@@ -637,7 +696,7 @@ var SCSPEngine = (function() {
         addOp.title = 'Add operator (up to 6). New operators start as carriers — set Mod source on another op to use as modulator.';
         addOp.onclick = function() {
             if (inst.operators.length >= 6) return;
-            inst.operators.push({ freq_ratio:1.0, freq_fixed:0, level:0.8, ar:31, d1r:0, dl:0, d2r:0, rr:14, mdl:0, mod_source:-1, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 });
+            inst.operators.push({ freq_ratio:1.0, freq_fixed:0, level:0.8, ar:31, d1r:0, dl:0, d2r:0, rr:14, mdl:0, mod_sources:[], feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 });
             _renderInstEditor(container, inst, inst.operators.length - 1, onChange);
             if (onChange) onChange();
         };
@@ -689,9 +748,60 @@ var SCSPEngine = (function() {
         var op = inst.operators[selectedOp];
         if (!op) return;
 
+        // ── Frequency block (mode toggle + ratio OR fixed-Hz input) ──
+        // Two mutually exclusive modes: Ratio (tracks the tracker note) and
+        // Fixed Hz (constant frequency regardless of note — useful for bell
+        // partials, formant ops, kick clicks). freq_fixed = 0 means Ratio
+        // mode is in effect; freq_fixed > 0 wins over freq_ratio in
+        // programSlot.
+        var freqRow = document.createElement('div'); freqRow.className = 'op-param';
+        freqRow.title = 'Frequency mode. Ratio: pitch tracks the tracker note (×ratio). Fixed Hz: constant frequency regardless of note. Toggling switches which value drives this operator.';
+        var freqLbl = document.createElement('label'); freqLbl.textContent = 'Freq';
+        var freqMode = document.createElement('select');
+        var optRatio = document.createElement('option'); optRatio.value = 'ratio'; optRatio.textContent = 'Ratio';
+        var optFixed = document.createElement('option'); optFixed.value = 'fixed'; optFixed.textContent = 'Hz';
+        freqMode.appendChild(optRatio); freqMode.appendChild(optFixed);
+        freqMode.value = (op.freq_fixed > 0) ? 'fixed' : 'ratio';
+
+        var ratioInp = document.createElement('input'); ratioInp.type = 'range';
+        ratioInp.min = 0.5; ratioInp.max = 16; ratioInp.step = 0.001;
+        ratioInp.value = op.freq_ratio || 1;
+        ratioInp.title = 'Frequency multiplier relative to the note. 1.0 = fundamental, 2.0 = octave up. Non-integer values create inharmonic timbres.';
+
+        var fixedInp = document.createElement('input'); fixedInp.type = 'number';
+        fixedInp.min = 1; fixedInp.max = 16000; fixedInp.step = 1;
+        fixedInp.value = op.freq_fixed || 440;
+        fixedInp.style.width = '64px';
+        fixedInp.title = 'Fixed frequency in Hz. The operator plays at this frequency regardless of the tracker note (per SCSP doc §4.2.5: OCT/FNS is a multiplier of the sample\'s native rate).';
+
+        var freqVal = document.createElement('span'); freqVal.className = 'val';
+        function updateFreqVal() {
+            if (freqMode.value === 'fixed') freqVal.textContent = Math.round(op.freq_fixed) + ' Hz';
+            else freqVal.textContent = (op.freq_ratio || 1).toFixed(3);
+        }
+        function applyFreqMode() {
+            if (freqMode.value === 'fixed') {
+                if (!(op.freq_fixed > 0)) op.freq_fixed = parseFloat(fixedInp.value) || 440;
+                ratioInp.style.display = 'none';
+                fixedInp.style.display = '';
+            } else {
+                op.freq_fixed = 0;
+                fixedInp.style.display = 'none';
+                ratioInp.style.display = '';
+            }
+            updateFreqVal();
+            syncRawRegs(op);
+        }
+        freqMode.onchange = function() { applyFreqMode(); if (onChange) onChange({paramTweak: true}); };
+        ratioInp.oninput = function() { op.freq_ratio = parseFloat(ratioInp.value); updateFreqVal(); syncRawRegs(op); if (onChange) onChange({paramTweak: true}); };
+        fixedInp.oninput = function() { op.freq_fixed = Math.max(0, parseFloat(fixedInp.value) || 0); updateFreqVal(); syncRawRegs(op); if (onChange) onChange({paramTweak: true}); };
+
+        freqRow.appendChild(freqLbl); freqRow.appendChild(freqMode);
+        freqRow.appendChild(ratioInp); freqRow.appendChild(fixedInp); freqRow.appendChild(freqVal);
+        container.appendChild(freqRow);
+        applyFreqMode();
+
         var params = [
-            { key:'freq_ratio', label:'Ratio', min:0.5, max:16, step:0.001, fmt: function(v) { return v.toFixed(3); },
-              help:'Frequency multiplier relative to the note. 1.0 = fundamental, 2.0 = octave up. Non-integer values create inharmonic timbres.' },
             { key:'level', label:'Level', min:0, max:1, step:0.01, fmt: function(v) { return v.toFixed(2); },
               help:'Output level of this operator. For carriers, controls volume. For modulators, controls how much FM modulation is applied.' },
             { key:'ar', label:'AR', min:0, max:31, step:1, fmt: function(v) { return Math.round(v); },
@@ -704,8 +814,8 @@ var SCSPEngine = (function() {
               help:'Decay 2 Rate — slow decay during the sustain phase. 0 = hold forever, higher = gradual fade.' },
             { key:'rr', label:'RR', min:0, max:31, step:1, fmt: function(v) { return Math.round(v); },
               help:'Release Rate — how fast the sound fades after note-off. Higher = faster release, lower = long tail.' },
-            { key:'feedback', label:'FB', min:0, max:0.5, step:0.01, fmt: function(v) { return v.toFixed(2); },
-              help:'Self-feedback — operator modulates itself. Low values add harmonics, higher values create noise/distortion.' },
+            { key:'feedback', label:'FB', min:0, max:15, step:1, fmt: function(v) { return Math.round(v); },
+              help:'Self-feedback nibble (0..15) — operator modulates itself. Maps directly to the SCSP MDL feedback register. Low values add harmonics, higher values create noise/distortion.' },
             { key:'mdl', label:'MDL', min:0, max:15, step:1, fmt: function(v) { return Math.round(v); },
               help:'Modulation Depth Level — how strongly the mod source affects this operator. 0 = none, 15 = maximum FM depth.' },
         ];
@@ -725,19 +835,45 @@ var SCSPEngine = (function() {
             container.appendChild(row);
         }
 
-        // Mod source dropdown
-        var msRow = document.createElement('div'); msRow.className = 'op-param';
-        msRow.title = 'Modulation source — which operator modulates this one. Set to "None" for no FM input (use self-feedback instead).';
-        var msLbl = document.createElement('label'); msLbl.textContent = 'Mod';
-        var msSel = document.createElement('select');
-        var msNone = document.createElement('option'); msNone.value = -1; msNone.textContent = 'None'; msSel.appendChild(msNone);
-        for (var mi = 0; mi < inst.operators.length; mi++) {
-            if (mi === selectedOp) continue;
-            var o = document.createElement('option'); o.value = mi; o.textContent = 'Op' + (mi + 1); msSel.appendChild(o);
+        // Mod source dropdowns — the SCSP has two modulation inputs (X and Y)
+        // per slot, so each op can take up to two distinct modulators. With
+        // one mod, both inputs feed from the same source (per Sega doc 4.3,
+        // single-side input "may make the FM modulation degree seem small").
+        // With two mods, X = Mod 1 and Y = Mod 2, both at the latest sample.
+        if (!Array.isArray(op.mod_sources)) op.mod_sources = [];
+        function _makeModSel(label, slotIdx, helpText) {
+            var row = document.createElement('div'); row.className = 'op-param';
+            row.title = helpText;
+            var lbl = document.createElement('label'); lbl.textContent = label;
+            var sel = document.createElement('select');
+            var none = document.createElement('option'); none.value = -1; none.textContent = 'None';
+            sel.appendChild(none);
+            for (var mi = 0; mi < inst.operators.length; mi++) {
+                if (mi === selectedOp) continue;
+                var o = document.createElement('option'); o.value = mi; o.textContent = 'Op' + (mi + 1);
+                sel.appendChild(o);
+            }
+            var cur = op.mod_sources[slotIdx];
+            sel.value = (typeof cur === 'number' && cur >= 0) ? cur : -1;
+            sel.onchange = function() {
+                var v = parseInt(sel.value);
+                var arr = (op.mod_sources || []).slice();
+                while (arr.length <= slotIdx) arr.push(-1);
+                arr[slotIdx] = v;
+                // Compact: drop -1 entries, dedupe, cap at 2.
+                var seen = {};
+                op.mod_sources = arr.filter(function(s) {
+                    if (typeof s !== 'number' || s < 0) return false;
+                    if (seen[s]) return false;
+                    seen[s] = true;
+                    return true;
+                }).slice(0, 2);
+                syncRawRegs(op);
+            };
+            row.appendChild(lbl); row.appendChild(sel); container.appendChild(row);
         }
-        msSel.value = op.mod_source;
-        msSel.onchange = function() { op.mod_source = parseInt(msSel.value); syncRawRegs(op); };
-        msRow.appendChild(msLbl); msRow.appendChild(msSel); container.appendChild(msRow);
+        _makeModSel('Mod 1', 0, 'First modulation source (drives MDXSL). With only Mod 1 set, the chip feeds it into both X and Y inputs (recommended for single-modulator FM).');
+        _makeModSel('Mod 2', 1, 'Second modulation source (drives MDYSL). Set this in addition to Mod 1 for two-modulator FM (the SCSP averages X and Y). Has no effect when self-feedback is also active — the SCSP only has two modulation inputs total.');
 
         // Waveform dropdown
         var wvRow = document.createElement('div'); wvRow.className = 'op-param';
@@ -911,17 +1047,18 @@ var SCSPEngine = (function() {
             try {
                 resetSCSP();
                 scspReady = true;
-                var instruments = DX7Import.convertBank(arrayBuffer, 6);
-                if (!instruments.length) {
-                    return { instruments: null, message: 'No audible voices in ' + label };
+                var result = DX7Import.convertBank(arrayBuffer, 6);
+                if (!result.instruments.length) {
+                    return { instruments: null, warnings: [], message: 'No audible voices in ' + label };
                 }
                 return {
-                    instruments: instruments,
-                    message: 'Imported ' + instruments.length + ' DX7 voices from ' + label
+                    instruments: result.instruments,
+                    warnings: result.warnings || [],
+                    message: 'Imported ' + result.instruments.length + ' DX7 voices from ' + label
                 };
             } catch (err) {
                 console.error('DX7 SysEx import error:', err);
-                return { instruments: null, message: 'Error importing ' + label + ': ' + err.message };
+                return { instruments: null, warnings: [], message: 'Error importing ' + label + ': ' + err.message };
             }
         },
 
@@ -945,7 +1082,7 @@ var SCSPEngine = (function() {
         /** @description Create a new single-operator default instrument.
          *  @returns {Object} Instrument with one carrier operator */
         createDefaultInstrument: function() {
-            return { name: 'New', operators: [{ freq_ratio:1.0, freq_fixed:0, level:0.8, ar:31, d1r:0, dl:0, d2r:0, rr:14, mdl:0, mod_source:-1, feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 }] };
+            return { name: 'New', operators: [{ freq_ratio:1.0, freq_fixed:0, level:0.8, ar:31, d1r:0, dl:0, d2r:0, rr:14, mdl:0, mod_sources:[], feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 }] };
         },
 
         /** @description Get deep copies of all preset instruments.
@@ -1059,10 +1196,10 @@ var SCSPEngine = (function() {
                         if (op.rawRegs) {
                             if (op.useTonSA) {
                                 var origSA = ((op.rawRegs.d0 & 0x0F) << 16) | op.rawRegs.sa;
-                                programSlotRaw(v.slots[i], op.rawRegs, v.note, origSA, slotBase, i, op.rawRegs.lea, op.mod_source);
+                                programSlotRaw(v.slots[i], op.rawRegs, v.note, origSA, slotBase, i, op.rawRegs.lea, getModSources(op), op.freq_fixed || 0);
                             } else {
                                 var wav = waveStore.waves[op.waveform || 0] || waveStore.waves[0];
-                                programSlotRaw(v.slots[i], op.rawRegs, v.note, wav.offset, slotBase, i, wav.length, op.mod_source);
+                                programSlotRaw(v.slots[i], op.rawRegs, v.note, wav.offset, slotBase, i, wav.length, getModSources(op), op.freq_fixed || 0);
                             }
                         } else {
                             programSlot(v.slots[i], op, v.note, slotBase);
