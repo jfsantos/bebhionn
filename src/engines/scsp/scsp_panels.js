@@ -323,6 +323,40 @@ var SCSPPanels = (function() {
             drawWaveformPreview();
         };
         el.appendChild(leLbl); el.appendChild(leInp);
+
+        // PCM-sample-only controls: shown when the operator carries a
+        // recording with a known source sample rate. Root note tells
+        // programSlot which MIDI note should play the sample at its natural
+        // pitch; sample rate is the WAV's recorded rate (read-only).
+        //
+        // The note picker uses noteName() so labels match what users enter
+        // in the pattern grid (standard MIDI: MIDI 60 = C4 = middle C).
+        if (op.sample_rate > 0) {
+            var rnLbl = document.createElement('label'); rnLbl.textContent = 'Root:';
+            var rnSel = document.createElement('select');
+            var curRoot = (op.root_note != null) ? op.root_note : 69;
+            for (var n = 0; n < 128; n++) {
+                var o = document.createElement('option');
+                o.value = n;
+                o.textContent = noteName(n);
+                if (n === curRoot) o.selected = true;
+                rnSel.appendChild(o);
+            }
+            rnSel.onchange = function() {
+                op.root_note = parseInt(rnSel.value);
+                engine.syncRawRegs(op);
+                engine.liveUpdatePreview(state.instruments, selectedInst, selectedOp);
+                ui.renderInstEditor();
+            };
+            el.appendChild(rnLbl); el.appendChild(rnSel);
+
+            var srLbl = document.createElement('label'); srLbl.textContent = 'Rate:';
+            var srSpan = document.createElement('span');
+            srSpan.textContent = op.sample_rate + ' Hz';
+            srSpan.style.fontSize = '10px';
+            srSpan.style.color = '#aaa';
+            el.appendChild(srLbl); el.appendChild(srSpan);
+        }
     }
 
     // --- Routing graph ---
@@ -435,7 +469,7 @@ var SCSPPanels = (function() {
             var o = dOff + i * bps * fmt.ch;
             out[i] = fmt.bits === 16 ? v.getInt16(o, true) / 32768 : fmt.bits === 8 ? (v.getUint8(o) - 128) / 128 : 0;
         }
-        return { samples: out };
+        return { samples: out, sampleRate: fmt.sr, bits: fmt.bits };
     }
 
     function resampleTo(input, targetLen) {
@@ -463,9 +497,24 @@ var SCSPPanels = (function() {
                         var inst = state.instruments[selectedInst];
                         var op = inst.operators[selectedOp];
 
+                        // PCM loads keep their original length and sample
+                        // rate so pitch can be reconstructed correctly at
+                        // playback time (see programSlot's isPcmSample path).
+                        // The 1024-sample resample is reserved for the
+                        // operator's role as an FM cycle, which programSlot
+                        // handles by substituting the default sine when an
+                        // operator with a non-1024 wave is used as modulator
+                        // or FM carrier.
+                        //
+                        // SCSP LSA/LEA registers are 16-bit, so loops can't
+                        // address past sample 65535. Truncate to keep loop
+                        // points consistent with the stored data.
                         var samples = result.samples;
-                        if (samples.length !== engine.WAVE_LEN) {
-                            samples = resampleTo(samples, engine.WAVE_LEN);
+                        var MAX_PCM = 65535;
+                        var truncated = false;
+                        if (samples.length > MAX_PCM) {
+                            samples = samples.slice(0, MAX_PCM);
+                            truncated = true;
                         }
 
                         var wid = engine.addWaveform(samples, 0, samples.length, 1);
@@ -473,10 +522,15 @@ var SCSPPanels = (function() {
                         op.loop_start = 0;
                         op.loop_end = samples.length;
                         op.loop_mode = 1;
+                        op.sample_rate = result.sampleRate;
+                        if (op.root_note == null) op.root_note = 69;
                         engine.customWaves[selectedInst + '_' + selectedOp] = samples;
                         engine.syncRawRegs(op);
                         refreshInstDetail();
                         ui.renderInstEditor();
+                        if (truncated) {
+                            alert('WAV longer than 65535 samples; truncated to fit SCSP loop registers.');
+                        }
                     });
                 } catch (err) { alert('WAV error: ' + err.message); }
             };

@@ -14,25 +14,27 @@ describe('NOTE_NAMES', () => {
 });
 
 describe('noteName', () => {
-    it('converts middle C (60) to C-5', () => {
-        assert.equal(noteName(60), 'C-5');
+    // Standard MIDI / DAW octave convention: MIDI 60 = middle C = C4.
+    // Matches MIDI files, SF2/SFZ root keys, WAV smpl chunks, and every DAW.
+    it('converts middle C (60) to C-4', () => {
+        assert.equal(noteName(60), 'C-4');
     });
 
-    it('converts concert A (69) to A-5', () => {
-        assert.equal(noteName(69), 'A-5');
+    it('converts concert A (69) to A-4', () => {
+        assert.equal(noteName(69), 'A-4');
     });
 
-    it('converts MIDI 0 to C-0', () => {
-        assert.equal(noteName(0), 'C-0');
+    it('converts MIDI 12 to C-0', () => {
+        assert.equal(noteName(12), 'C-0');
     });
 
-    it('converts MIDI 127 to G-10', () => {
-        assert.equal(noteName(127), 'G-10');
+    it('converts MIDI 127 to G-9', () => {
+        assert.equal(noteName(127), 'G-9');
     });
 
     it('handles sharps', () => {
-        assert.equal(noteName(61), 'C#5');
-        assert.equal(noteName(70), 'A#5');
+        assert.equal(noteName(61), 'C#4');
+        assert.equal(noteName(70), 'A#4');
     });
 
     it('returns ??? for out of range values', () => {

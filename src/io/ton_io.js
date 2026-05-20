@@ -236,9 +236,19 @@ const TonIO = (function () {
         if (lea === undefined || lea === null || lea < 0) lea = wave.length;
         const loop = (op.loop_mode !== undefined ? op.loop_mode : 1) !== 0;
 
-        // Base note from freq ratio
+        // Base note: PCM samples with a known source rate need the rate
+        // ratio folded in, since the SCSP plays one stored sample per output
+        // sample at OCT=0/FNS=0 — so to make the recording sound at root_note
+        // the OCT=0 anchor sits at root_note + 12·log2(SCSP_RATE/sample_rate).
+        // Other operators fall back to the freq_ratio convention (ratio=1 →
+        // baseNote=69 = A4).
+        const SCSP_RATE = 44100;
         let baseNote = 69;
-        if (op.freq_ratio && op.freq_ratio > 0) {
+        if (op.sample_rate && op.sample_rate > 0) {
+          const root = (op.root_note != null) ? op.root_note : 69;
+          baseNote = Math.max(0, Math.min(127,
+            Math.round(root + 12 * Math.log2(SCSP_RATE / op.sample_rate))));
+        } else if (op.freq_ratio && op.freq_ratio > 0) {
           const ratioSemitones = Math.round(12 * Math.log2(op.freq_ratio));
           baseNote = Math.max(0, Math.min(127, 69 - ratioSemitones));
         }

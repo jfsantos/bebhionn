@@ -68,7 +68,7 @@ var SCSPEngine = (function() {
         ]},
         // 4. Acid Bass — self-feedback modulator creates saw-like harmonics; high MDL for grit
         { name: 'Acid Bass', operators: [
-            { freq_ratio:1.0, freq_fixed:0, level:0.9, ar:31, d1r:8,  dl:4, d2r:0, rr:16, mdl:0,  mod_sources:[], feedback:10, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
+            { freq_ratio:1.0, freq_fixed:0, level:0.9, ar:31, d1r:8,  dl:4, d2r:0, rr:16, mdl:0,  mod_sources:[], feedback:8, is_carrier:false, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
             { freq_ratio:1.0, freq_fixed:0, level:0.9, ar:31, d1r:10, dl:6, d2r:2, rr:16, mdl:11, mod_sources:[0],  feedback:0, is_carrier:true, waveform:0, loop_mode:1, loop_start:0, loop_end:1024 },
         ]},
         // 5. Harsh Lead — 3-op stacked chain (mod→mod→carrier); square-wave modulator for extra edge
@@ -412,8 +412,31 @@ var SCSPEngine = (function() {
         }
 
         var wavLen = wav.length || WAVE_LEN;
-        var wavBaseFreq = SAMPLE_RATE / wavLen;
-        var wavBaseNote = wavBaseNoteFor(wavLen);
+
+        // Pitch base note: PCM samples and period waveforms anchor differently.
+        //  - PCM sample (sample_rate set, not driving FM): the stored buffer
+        //    is an arbitrary recording, not one period. At OCT=0/FNS=0 the
+        //    SCSP advances one stored sample per output sample (playback rate
+        //    = SAMPLE_RATE). So to make the recording sound at its natural
+        //    pitch when the user plays op.root_note, the OCT=0 anchor note is
+        //    root_note shifted by the rate ratio: an N-fold rate increase is
+        //    +12·log2(N) semitones.
+        //  - Period waveform (built-in sine/saw/etc., or any FM role): the
+        //    buffer is one cycle, so opBaseNote derives from its natural
+        //    period at SAMPLE_RATE.
+        // Either way, wavBaseFreq = 440 * 2^((wavBaseNote-69)/12) gives the
+        // audible Hz at the OCT=0 anchor (this expression equals SAMPLE_RATE/
+        // wavLen for the period case — same formula, different anchor).
+        // freq_ratio applies as a semitone offset on top of either base.
+        var isPcmSample = !usesFM && !isMod && op.sample_rate > 0;
+        var wavBaseNote;
+        if (isPcmSample) {
+            var rootNote = (op.root_note != null) ? op.root_note : 69;
+            wavBaseNote = rootNote + 12 * Math.log2(SAMPLE_RATE / op.sample_rate);
+        } else {
+            wavBaseNote = wavBaseNoteFor(wavLen);
+        }
+        var wavBaseFreq = 440 * Math.pow(2, (wavBaseNote - 69) / 12);
 
         // Pitch (OCT/FNS): two cases.
         //  - freq_ratio mode: opBaseNote = wavBaseNote shifted down by the ratio
@@ -895,15 +918,24 @@ var SCSPEngine = (function() {
         cChk.onchange = function() { op.is_carrier = cChk.checked; syncRawRegs(op); _renderInstEditor(container, inst, selectedOp, onChange); };
         cRow.appendChild(cLbl); cRow.appendChild(cChk); container.appendChild(cRow);
 
-        // Test button
+        // Test button. For PCM samples (sample_rate set on the selected op),
+        // play at the op's root_note so the user always hears the recording
+        // unshifted — auditioning the sample, not the transposition. For all
+        // other ops the conventional middle-C test note (MIDI 60 = C4) is
+        // used. The played note is resolved on click so root_note edits don't
+        // need a re-render.
+        function _testNoteFor(o) {
+            return (o.sample_rate > 0 && o.root_note != null) ? o.root_note : 60;
+        }
         var testRow = document.createElement('div'); testRow.style.marginTop = '8px';
         var testBtn = document.createElement('button');
-        testBtn.textContent = 'Test (C-4)';
+        testBtn.textContent = 'Test (' + noteName(_testNoteFor(op)) + ')';
         testBtn.style.cssText = 'background:#2a4a2e;color:#8c8;border:1px solid #4a4;padding:4px 12px;cursor:pointer;border-radius:3px;font-family:inherit;font-size:10px;';
         testBtn.onclick = function() {
             api.init().then(function() {
                 if (playbackRef) api.startAudio(playbackRef);
-                _triggerNote(99, 60, 0, inst);
+                var note = _testNoteFor(inst.operators[selectedOp]);
+                _triggerNote(99, note, 0, inst);
                 setTimeout(function() { voiceAlloc.release(99); }, 500);
             });
         };
